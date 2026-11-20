@@ -101,8 +101,8 @@ Phase 3 features: DICOM upload (Orthanc), OHIF viewer (zoom, pan, rotate, contra
 1. **Clone the repository** and switch to the integration branch.
 
    ```bash
-   git clone <REPOSITORY_URL>
-   cd <REPOSITORY_FOLDER>
+   git clone https://github.com/MazenAtlam/orthopedic_and_rehabilitation_system.git
+   cd orthopedic_and_rehabilitation_system
    git checkout develop
    ```
 
