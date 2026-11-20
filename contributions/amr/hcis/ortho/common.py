@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 
-from flask import current_app, g, request
+from flask import current_app, g, has_request_context, request
 from sqlalchemy import func, select
 
 from ortho.schema_v1 import audit_log
@@ -44,7 +44,7 @@ def audit(connection, action, resource, user_id=None):
         user_id=g.actor["user_id"] if user_id is None else user_id,
         action=action,
         resource=resource,
-        ip_address=request.remote_addr,
+        ip_address=request.remote_addr if has_request_context() else None,
     ))
 
 

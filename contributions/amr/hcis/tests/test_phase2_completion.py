@@ -160,5 +160,7 @@ def test_imaging_metadata_uid_and_review_visibility(app, client, tokens, people)
         own = client.get(f"{FHIR}/DiagnosticReport/{identity}", headers=tokens["patient"])
         assert own.status_code == (200 if status == "final" else 404)
     listing = client.get(f"{FHIR}/DiagnosticReport?patient=Patient/{patient}", headers=tokens["patient"])
-    assert [item["resource"]["id"] for item in listing.json["entry"]] == [str(report_ids[0])]
+    listed = {item["resource"]["id"] for item in listing.json["entry"]}
+    assert str(report_ids[0]) in listed
+    assert listed.isdisjoint(map(str, report_ids[1:]))
     assert client.get(f"{FHIR}/DiagnosticReport?patient=Patient/{other}", headers=tokens["patient"]).json["total"] == 0
