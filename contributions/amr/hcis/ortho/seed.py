@@ -11,9 +11,10 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from ortho.common import db, utcnow
+from ortho.imaging import record_annotation, record_cdss_result, register_study, review_cdss_result
 from ortho.schema_v1 import (
     appointment, icd10_code, invoice, invoice_item, medical_record, patient, payment,
-    prescription, rehab_session, service, staff, treatment_plan, user,
+    prescription, rehab_session, scan, service, staff, treatment_plan, user,
 )
 
 ICD10_SAMPLE = (
@@ -26,6 +27,7 @@ ADMIN = "admin@ortho.example"
 STAFF = "staff@ortho.example"
 PATIENT = "patient@ortho.example"
 OTHER = "patient2@ortho.example"
+DEMO_STUDY_UID = "2.25.213338814091244823214794205785473106551"
 
 
 def install_command(app):
@@ -41,6 +43,41 @@ def insert_one(connection, table, **values):
     return connection.scalar(table.insert().values(**values).returning(next(iter(table.primary_key))))
 
 
+def seed_imaging_example(connection):
+    if connection.scalar(select(scan.c.scan_id).where(scan.c.study_uid == DEMO_STUDY_UID)):
+        return False
+    actor = connection.scalar(select(user.c.user_id).where(
+        user.c.email == STAFF, user.c.is_active, user.c.role == "staff",
+    ))
+    visit = connection.execute(select(
+        medical_record.c.record_id, medical_record.c.patient_id, medical_record.c.visit_date,
+    ).select_from(medical_record.join(patient).join(user)).where(
+        user.c.email == PATIENT, user.c.role == "patient",
+    ).order_by(medical_record.c.record_id).limit(1)).mappings().one_or_none()
+    if actor is None or visit is None:
+        return False
+    study = register_study(connection, actor, {
+        "patient_id": visit["patient_id"], "record_id": visit["record_id"],
+        "study_uid": DEMO_STUDY_UID, "orthanc_id": "fictional-studystore-entry",
+        "modality": "DX", "body_part": "Knee", "study_date": visit["visit_date"].isoformat(),
+    })
+    scan_id = study["scan_id"]
+    approved = record_cdss_result(connection, actor, scan_id, {
+        "model_version": "demo-fixture-v1",
+        "report_text": "Fictional accepted finding for the integration demonstration.",
+        "confidence": 0.92,
+    })
+    review_cdss_result(connection, actor, approved["result_id"], "accepted")
+    record_cdss_result(connection, actor, scan_id, {
+        "model_version": "demo-fixture-v1",
+        "report_text": "Fictional preliminary finding awaiting staff review.",
+    })
+    record_annotation(connection, actor, scan_id, {
+        "type": "note", "data": {"text": "Example annotation for the fictional study."},
+    })
+    return True
+
+
 def seed(engine):
     with engine.begin() as connection:
         connection.execute(select(func.pg_advisory_xact_lock(320002)))
@@ -49,7 +86,7 @@ def seed(engine):
             for code, description, category in ICD10_SAMPLE
         ]).on_conflict_do_nothing(index_elements=[icd10_code.c.code]))
         if connection.scalar(select(user.c.user_id).where(user.c.email == ADMIN)):
-            return False
+            return seed_imaging_example(connection)
 
         hashed = bcrypt.hashpw(token_urlsafe(32).encode(), bcrypt.gensalt()).decode()
         staff_account = None
@@ -104,4 +141,5 @@ def seed(engine):
             if index:
                 insert_one(connection, payment, invoice_id=bill, amount=Decimal("150.00"), method="cash",
                            status="success", paid_at=start + timedelta(hours=1))
+        seed_imaging_example(connection)
     return True
