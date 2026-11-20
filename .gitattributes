@@ -1,0 +1,11 @@
+# Keep Linux line endings for files that run inside Docker (important on Windows)
+* text=auto
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.conf text eol=lf
+*.xlsx binary
+*.png binary
+*.jpg binary
+*.pdf binary
+*.dcm binary
