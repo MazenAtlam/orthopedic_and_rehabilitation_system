@@ -21,6 +21,8 @@ from app.api.v1.fhir import fhir, fhir_error
 from app.api.v1.reports import reporting
 from app.config import Config
 from app.utils.common import ApiError
+from scripts.demo_token import install_command as install_demo_token
+from scripts.load_icd10 import install_command as install_icd10
 from scripts.seed import install_command
 
 
@@ -84,6 +86,8 @@ def create_app(
     for blueprint in (billing, reporting, fhir):
         app.register_blueprint(blueprint)
     install_command(app)
+    install_demo_token(app)
+    install_icd10(app)
 
     def failure(status: int, code: str, message: str) -> Any:
         path = request.path
