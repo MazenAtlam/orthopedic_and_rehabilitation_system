@@ -2,7 +2,7 @@
 
 from alembic import op
 
-from ortho.schema_v1 import metadata
+from app.models.schema_v1 import metadata
 
 revision = "0001_phase2"
 down_revision = None

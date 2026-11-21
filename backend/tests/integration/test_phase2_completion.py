@@ -2,9 +2,9 @@ from datetime import date
 
 from sqlalchemy import select
 
-from ortho.common import utcnow
-from ortho.fhir_resources import ICD10_SYSTEM
-from ortho.schema_v1 import audit_log, cdss_result, scan
+from app.fhir.resources import ICD10_SYSTEM
+from app.models.schema_v1 import audit_log, cdss_result, scan
+from app.utils.common import utcnow
 
 FHIR = "/api/v1/fhir"
 FHIR_JSON = "application/fhir+json"
@@ -13,26 +13,50 @@ FHIR_JSON = "application/fhir+json"
 def test_staff_can_record_a_diagnosis_and_see_it_in_fhir_and_reports(app, client, tokens, people):
     patient, other, practitioner = people
     visit_date = utcnow().date().isoformat()
-    payload = {
-        "patient_id": patient, "visit_date": visit_date, "icd10_code": "m17.9",
-        "chief_complaint": "Fictional follow-up", "affected_area": "knee",
-        "diagnosis": "Fictional coded diagnosis",
+    subject = {"reference": f"Patient/{patient}"}
+    encounter = {
+        "resourceType": "Encounter",
+        "status": "finished", "class": {"code": "AMB"}, "subject": subject,
+        "period": {"start": visit_date},
+        "reasonCode": [{"text": "Fictional follow-up"}],
+        "diagnosis": [{"condition": {"reference": "#diagnosis"}}],
+        "participant": [{"individual": {"reference": f"Practitioner/{practitioner}"}}],
+        "contained": [{
+            "resourceType": "Condition", "id": "diagnosis", "subject": subject,
+            "code": {
+                "coding": [{"system": ICD10_SYSTEM, "code": "m17.9"}],
+                "text": "Fictional coded diagnosis",
+            },
+        }],
     }
     for role in ("admin", "patient"):
-        assert client.post("/api/v1/records", headers=tokens[role], json=payload).status_code == 403
-    unknown = client.post("/api/v1/records", headers=tokens["staff"], json={
-        **payload, "icd10_code": "ZZZ",
-    })
-    assert unknown.status_code == 422 and unknown.json["error"]["code"] == "code-invalid"
-    wrong_author = client.post("/api/v1/records", headers=tokens["staff"], json={
-        **payload, "staff_id": practitioner + 1,
-    })
+        assert client.post(
+            f"{FHIR}/Encounter", headers=tokens[role], json=encounter, content_type=FHIR_JSON,
+        ).status_code == 403
+    unknown_condition = {
+        **encounter["contained"][0],
+        "code": {"coding": [{"system": ICD10_SYSTEM, "code": "ZZZ"}]},
+    }
+    unknown = client.post(
+        f"{FHIR}/Encounter", headers=tokens["staff"],
+        json={**encounter, "contained": [unknown_condition]}, content_type=FHIR_JSON,
+    )
+    assert unknown.status_code == 422
+    wrong_author = client.post(
+        f"{FHIR}/Encounter", headers=tokens["staff"],
+        json={
+            **encounter,
+            "participant": [{"individual": {"reference": f"Practitioner/{practitioner + 1}"}}],
+        },
+        content_type=FHIR_JSON,
+    )
     assert wrong_author.status_code == 403
 
-    result = client.post("/api/v1/records", headers=tokens["staff"], json=payload)
+    result = client.post(
+        f"{FHIR}/Encounter", headers=tokens["staff"], json=encounter, content_type=FHIR_JSON,
+    )
     assert result.status_code == 201, result.json
-    assert result.json["staff_id"] == practitioner and result.json["icd10_code"] == "M17.9"
-    record_id = result.json["record_id"]
+    record_id = int(result.json["id"])
     own = client.get(f"{FHIR}/Condition/{record_id}", headers=tokens["patient"])
     assert own.status_code == 200
     assert own.json["encounter"]["reference"] == f"Encounter/{record_id}"
@@ -51,7 +75,7 @@ def test_staff_can_record_a_diagnosis_and_see_it_in_fhir_and_reports(app, client
     assert any(item["code"] == "M17.9" for item in stats.json["diagnoses"])
     with app.extensions["ortho_db"].connect() as connection:
         event = connection.scalar(select(audit_log.c.action).where(
-            audit_log.c.resource == f"medical_record/{record_id}"
+            audit_log.c.resource == f"Encounter/{record_id}"
         ))
     assert event == "create"
 

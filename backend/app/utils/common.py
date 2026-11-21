@@ -5,7 +5,7 @@ from functools import wraps
 from flask import current_app, g, has_request_context, request
 from sqlalchemy import func, select
 
-from ortho.schema_v1 import audit_log
+from app.models.schema_v1 import audit_log
 
 MAX_ID = 2_147_483_647
 MAX_MONEY = Decimal("99999999.99")

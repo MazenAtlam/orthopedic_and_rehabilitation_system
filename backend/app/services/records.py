@@ -1,14 +1,14 @@
-"""Clinical record persistence shared by the portal and FHIR."""
+"""Clinical record persistence helper used by the FHIR Encounter writer.
 
-from flask import Blueprint, g
+The ``POST /api/v1/records`` REST endpoint belongs to F06 (Hussein) in
+``app/api/v1/records.py``.
+"""
+
+from flask import g
 from sqlalchemy import select
 
-from ortho.access import load_actor
-from ortho.common import ApiError, as_date, as_int, as_text, audit, body, db, require_roles
-from ortho.schema_v1 import icd10_code, medical_record, patient, staff
-
-records = Blueprint("records", __name__, url_prefix="/api/v1")
-records.before_request(load_actor)
+from app.models.schema_v1 import icd10_code, medical_record, patient, staff
+from app.utils.common import ApiError, as_date, as_int, as_text
 
 
 def clinician_id(connection):
@@ -46,13 +46,3 @@ def insert_visit(connection, data):
             )
         },
     ).returning(medical_record)).mappings().one()
-
-
-@records.post("/records")
-@require_roles("staff")
-def create_record():
-    data = body()
-    with db().begin() as connection:
-        row = insert_visit(connection, data)
-        audit(connection, "create", f"medical_record/{row['record_id']}")
-    return dict(row), 201

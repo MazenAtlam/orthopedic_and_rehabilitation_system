@@ -4,8 +4,8 @@ from flask import g
 from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request
 from sqlalchemy import select
 
-from ortho.common import ApiError, db
-from ortho.schema_v1 import patient, user
+from app.utils.common import ApiError, db
+from app.models.schema_v1 import patient, user
 
 
 def load_actor():

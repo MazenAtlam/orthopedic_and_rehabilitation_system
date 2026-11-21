@@ -7,9 +7,9 @@ import pytest
 from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import DBAPIError
 
-from ortho.common import utcnow
-from ortho.fhir_resources import ICD10_SYSTEM
-from ortho.schema_v1 import audit_log, metadata
+from app.utils.common import utcnow
+from app.fhir.resources import ICD10_SYSTEM
+from app.models.schema_v1 import audit_log, metadata
 
 
 def bill_for(client, headers, patient_id, *, service_id=1, due=None):

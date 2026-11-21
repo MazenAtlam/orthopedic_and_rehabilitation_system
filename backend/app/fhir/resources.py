@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import String, cast, literal, select, union_all
 
-from ortho.schema_v1 import (
+from app.models.schema_v1 import (
     appointment, cdss_result, icd10_code, invoice, invoice_item, medical_record, patient, payment,
     prescription, rehab_session, scan, service, staff, treatment_plan,
 )

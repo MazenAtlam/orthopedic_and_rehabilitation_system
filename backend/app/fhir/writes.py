@@ -6,10 +6,10 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from ortho.common import ApiError, as_date, as_int, as_money, as_text
-from ortho.fhir_resources import APPOINTMENT_TYPES, ICD10_SYSTEM, REHAB_METRICS
-from ortho.records import clinician_id, insert_visit
-from ortho.schema_v1 import appointment, medical_record, patient, prescription, rehab_session, staff, treatment_plan
+from app.utils.common import ApiError, as_date, as_int, as_money, as_text
+from app.fhir.resources import APPOINTMENT_TYPES, ICD10_SYSTEM, REHAB_METRICS
+from app.services.records import clinician_id, insert_visit
+from app.models.schema_v1 import appointment, medical_record, patient, prescription, rehab_session, staff, treatment_plan
 
 CARE_PLAN_STATUS = {"active": "active", "completed": "completed", "revoked": "stopped"}
 
