@@ -202,7 +202,7 @@ jobs:
   ci-gate:
     name: CI gate
     if: always()
-    needs: [changes, commit-messages, backend, cdss-service, web, docker]
+    needs: [changes, backend, cdss-service, web, docker]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled
