@@ -1,5 +1,6 @@
 # CI for Team 03 - enforces the Phase 0 code style and runs the tests.
-# Runs on every pull request and on every push to develop / main.
+# Each job runs ONLY when files in its own area changed (see the "changes" job).
+# A change that touches only README.md or docs/ runs no code job.
 name: CI
 
 on:
@@ -16,6 +17,55 @@ permissions:
   contents: read
 
 jobs:
+  # ------------------------------------------------------------ Detect changed areas
+  changes:
+    name: Detect changed files
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      cdss: ${{ steps.filter.outputs.cdss }}
+      docker: ${{ steps.filter.outputs.docker }}
+      web: ${{ steps.matrix.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/ci.yml'
+            cdss:
+              - 'cdss-service/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+            emr_client:
+              - 'emr-client/**'
+              - '.github/workflows/ci.yml'
+            docker:
+              - 'docker-compose.yml'
+              - '.env.example'
+              - 'nginx/**'
+              - 'backend/**'
+              - 'frontend/**'
+              - 'emr-client/**'
+              - '.github/workflows/ci.yml'
+      - name: Build the list of React apps to check
+        id: matrix
+        run: |
+          apps=""
+          if [ "${{ steps.filter.outputs.frontend }}" = "true" ]; then apps="\"frontend\""; fi
+          if [ "${{ steps.filter.outputs.emr_client }}" = "true" ]; then
+            if [ -n "$apps" ]; then apps="$apps,"; fi
+            apps="$apps\"emr-client\""
+          fi
+          echo "web=[$apps]" >> "$GITHUB_OUTPUT"
+
   # ------------------------------------------------------------ Commit messages
   commit-messages:
     name: Conventional Commits
@@ -33,6 +83,8 @@ jobs:
   # ------------------------------------------------------------ Backend (Python)
   backend:
     name: Backend - black, flake8, mypy, pytest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -77,6 +129,8 @@ jobs:
   # ------------------------------------------------------------ CDSS service (Python)
   cdss-service:
     name: CDSS - black, flake8, mypy, pytest
+    needs: changes
+    if: needs.changes.outputs.cdss == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -102,11 +156,13 @@ jobs:
   # ------------------------------------------------------------ React apps
   web:
     name: ${{ matrix.app }} - prettier, eslint, tests, build
+    needs: changes
+    if: needs.changes.outputs.web != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        app: [frontend, emr-client]
+        app: ${{ fromJson(needs.changes.outputs.web) }}
     defaults:
       run:
         working-directory: ${{ matrix.app }}
@@ -134,6 +190,8 @@ jobs:
   # ------------------------------------------------------------ Docker
   docker:
     name: Docker Compose build and smoke test
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -151,3 +209,20 @@ jobs:
       - name: Stop services
         if: always()
         run: docker compose down -v
+
+  # ------------------------------------------------------------ Single required check
+  # Make ONLY this job a required status check in the branch protection rule.
+  # It passes when every job that ran passed, and when jobs were skipped (no changes).
+  ci-gate:
+    name: CI gate
+    if: always()
+    needs: [changes, commit-messages, backend, cdss-service, web, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed or was cancelled
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ] || [ "${{ contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "At least one CI job failed or was cancelled."
+            exit 1
+          fi
+          echo "All CI jobs passed or were skipped."
