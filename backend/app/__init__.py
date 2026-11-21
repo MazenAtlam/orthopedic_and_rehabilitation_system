@@ -57,10 +57,14 @@ def create_app(
     demo: bool | None = None,
 ) -> HealthcareApp:
     url = normalize_database_url(database_url or os.environ.get("DATABASE_URL", ""))
-    secret = secret or os.environ.get("JWT_SECRET_KEY", "")
+    secret = secret or os.environ.get("JWT_SECRET_KEY", Config.JWT_SECRET_KEY)
     if not url.startswith("postgresql+psycopg://"):
         raise RuntimeError("Set DATABASE_URL to a postgresql+psycopg connection URL.")
-    if len(secret.encode()) < 32 or secret.startswith("replace-with-"):
+    if (
+        not secret
+        or secret.startswith("replace-with-")
+        or (os.environ.get("APP_ENV") == "production" and len(secret.encode()) < 32)
+    ):
         raise RuntimeError("Set JWT_SECRET_KEY to a unique value of at least 32 bytes.")
 
     app = HealthcareApp(__name__, static_folder=None)
