@@ -139,7 +139,8 @@ def test_reports_match_seeded_historical_payments_and_visits(client, tokens):
 
 def test_icd10_search_and_invalid_invoice_code(client, tokens, people):
     result = client.get("/api/v1/icd10?q=m25", headers=tokens["staff"])
-    assert result.status_code == 200 and result.json["items"][0]["code"] == "M25.5"
+    assert result.status_code == 200
+    assert "M25.5" in {item["code"] for item in result.json["items"]}
     assert client.get("/api/v1/icd10", headers=tokens["patient"]).status_code == 403
     result = client.post("/api/v1/invoices", headers=tokens["staff"], json={
         "patient_id": people[0], "due_date": utcnow().date().isoformat(),

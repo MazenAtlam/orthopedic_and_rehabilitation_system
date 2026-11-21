@@ -10,7 +10,9 @@ from werkzeug.exceptions import HTTPException
 
 from ortho.billing import billing
 from ortho.common import ApiError
+from ortho.demo_token import install_command as install_demo_token
 from ortho.fhir import fhir, fhir_error
+from ortho.load_icd10 import install_command as install_icd10
 from ortho.records import records
 from ortho.reports import reporting
 from ortho.seed import install_command
@@ -44,6 +46,7 @@ def create_app(*, database_url=None, secret=None, demo=None):
 
     app = HealthcareApp(__name__, static_folder=None)
     app.config.update(
+        APP_ENV=os.environ.get("APP_ENV", "development"),
         JWT_SECRET_KEY=secret,
         JWT_TOKEN_LOCATION=["headers"],
         MAX_CONTENT_LENGTH=1_048_576,
@@ -56,6 +59,8 @@ def create_app(*, database_url=None, secret=None, demo=None):
     for blueprint in (billing, records, reporting, fhir):
         app.register_blueprint(blueprint)
     install_command(app)
+    install_demo_token(app)
+    install_icd10(app)
 
     def failure(status, code, message):
         path = request.path
