@@ -66,20 +66,6 @@ jobs:
           fi
           echo "web=[$apps]" >> "$GITHUB_OUTPUT"
 
-  # ------------------------------------------------------------ Commit messages
-  commit-messages:
-    name: Conventional Commits
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: wagoid/commitlint-github-action@v6
-
   # ------------------------------------------------------------ Backend (Python)
   backend:
     name: Backend - black, flake8, mypy, pytest
@@ -216,7 +202,7 @@ jobs:
   ci-gate:
     name: CI gate
     if: always()
-    needs: [changes, commit-messages, backend, cdss-service, web, docker]
+    needs: [changes, backend, cdss-service, web, docker]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled

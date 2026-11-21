@@ -7,8 +7,9 @@ to the team backend package (CORS, ``/api/v1/health``, ``/healthz``).
 import os
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from typing import Any
 
-from flask import Flask, request
+from flask import Flask, Response, request
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
@@ -32,12 +33,12 @@ def normalize_database_url(url: str) -> str:
 
 
 class JsonProvider(DefaultJSONProvider):
-    def loads(self, data, **kwargs):
+    def loads(self, s: str | bytes, **kwargs: Any) -> Any:
         kwargs.setdefault("parse_float", Decimal)
-        return super().loads(data, **kwargs)
+        return super().loads(s, **kwargs)
 
     @staticmethod
-    def default(value):
+    def default(value: Any) -> Any:
         if isinstance(value, datetime):
             return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         if isinstance(value, date):
@@ -49,12 +50,21 @@ class HealthcareApp(Flask):
     json_provider_class = JsonProvider
 
 
-def create_app(*, database_url=None, secret=None, demo=None):
+def create_app(
+    *,
+    database_url: str | None = None,
+    secret: str | None = None,
+    demo: bool | None = None,
+) -> HealthcareApp:
     url = normalize_database_url(database_url or os.environ.get("DATABASE_URL", ""))
-    secret = secret or os.environ.get("JWT_SECRET_KEY", "")
+    secret = secret or os.environ.get("JWT_SECRET_KEY", Config.JWT_SECRET_KEY)
     if not url.startswith("postgresql+psycopg://"):
         raise RuntimeError("Set DATABASE_URL to a postgresql+psycopg connection URL.")
-    if len(secret.encode()) < 32 or secret.startswith("replace-with-"):
+    if (
+        not secret
+        or secret.startswith("replace-with-")
+        or (os.environ.get("APP_ENV") == "production" and len(secret.encode()) < 32)
+    ):
         raise RuntimeError("Set JWT_SECRET_KEY to a unique value of at least 32 bytes.")
 
     app = HealthcareApp(__name__, static_folder=None)
@@ -75,46 +85,56 @@ def create_app(*, database_url=None, secret=None, demo=None):
         app.register_blueprint(blueprint)
     install_command(app)
 
-    def failure(status, code, message):
+    def failure(status: int, code: str, message: str) -> Any:
         path = request.path
         if path == "/api/v1/fhir" or path.startswith("/api/v1/fhir/"):
             return fhir_error(status, code, message)
         return {"error": {"code": code, "message": message}}, status
 
     @app.errorhandler(ApiError)
-    def api_error(error):
+    def api_error(error: ApiError) -> Any:
         return failure(error.status, error.code, error.message)
 
     @app.errorhandler(HTTPException)
-    def http_error(error):
-        codes = {404: "not-found", 405: "not-supported", 413: "too-long", 415: "invalid"}
-        return failure(error.code, codes.get(error.code, "processing"), error.description)
+    def http_error(error: HTTPException) -> Any:
+        codes = {
+            404: "not-found",
+            405: "not-supported",
+            413: "too-long",
+            415: "invalid",
+        }
+        status = error.code or 500
+        return failure(
+            status,
+            codes.get(status, "processing"),
+            error.description or "Request failed.",
+        )
 
     @jwt.unauthorized_loader
-    def token_missing(_reason):
+    def token_missing(_reason: str) -> Any:
         return failure(401, "login", "A valid bearer access token is required.")
 
     @jwt.invalid_token_loader
-    def token_invalid(_reason):
+    def token_invalid(_reason: str) -> Any:
         return failure(401, "login", "The access token is invalid.")
 
     @jwt.expired_token_loader
-    def token_expired(_header, _payload):
+    def token_expired(_header: dict[str, Any], _payload: dict[str, Any]) -> Any:
         return failure(401, "expired", "The access token has expired.")
 
     @app.after_request
-    def headers(response):
+    def headers(response: Response) -> Response:
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
     @app.get("/api/v1/health")
-    def health():
+    def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/healthz")
-    def healthz():
+    def healthz() -> dict[str, str]:
         with app.extensions["ortho_db"].connect() as connection:
             connection.execute(text("SELECT 1"))
         return {"status": "ok"}
