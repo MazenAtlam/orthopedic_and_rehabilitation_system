@@ -12,9 +12,9 @@ from app.utils.common import ApiError, as_date, as_int, as_text
 
 
 def clinician_id(connection):
-    identity = connection.scalar(select(staff.c.staff_id).where(
-        staff.c.user_id == g.actor["user_id"]
-    ))
+    identity = connection.scalar(
+        select(staff.c.staff_id).where(staff.c.user_id == g.actor["user_id"])
+    )
     if identity is None:
         raise ApiError(403, "forbidden", "A linked practitioner profile is required.")
     return identity
@@ -26,23 +26,43 @@ def insert_visit(connection, data):
     code = as_text(data.get("icd10_code"), "icd10_code", maximum=10).upper()
     practitioner = clinician_id(connection)
     if "staff_id" in data and as_int(data["staff_id"], "staff_id") != practitioner:
-        raise ApiError(403, "forbidden", "The practitioner must match the signed-in account.")
+        raise ApiError(
+            403, "forbidden", "The practitioner must match the signed-in account."
+        )
 
-    if connection.scalar(select(patient.c.patient_id).where(patient.c.patient_id == patient_id)) is None:
+    if (
+        connection.scalar(
+            select(patient.c.patient_id).where(patient.c.patient_id == patient_id)
+        )
+        is None
+    ):
         raise ApiError(404, "not-found", "Patient not found.")
-    if connection.scalar(select(icd10_code.c.code).where(icd10_code.c.code == code)) is None:
+    if (
+        connection.scalar(select(icd10_code.c.code).where(icd10_code.c.code == code))
+        is None
+    ):
         raise ApiError(422, "code-invalid", "Choose an ICD-10 code from the catalogue.")
 
-    return connection.execute(medical_record.insert().values(
-        patient_id=patient_id,
-        staff_id=practitioner,
-        visit_date=visit,
-        icd10_code=code,
-        **{
-            name: as_text(data.get(name), name, maximum=limit, optional=True)
-            for name, limit in (
-                ("chief_complaint", 4000), ("affected_area", 100),
-                ("diagnosis", 4000), ("notes", 4000),
+    return (
+        connection.execute(
+            medical_record.insert()
+            .values(
+                patient_id=patient_id,
+                staff_id=practitioner,
+                visit_date=visit,
+                icd10_code=code,
+                **{
+                    name: as_text(data.get(name), name, maximum=limit, optional=True)
+                    for name, limit in (
+                        ("chief_complaint", 4000),
+                        ("affected_area", 100),
+                        ("diagnosis", 4000),
+                        ("notes", 4000),
+                    )
+                },
             )
-        },
-    ).returning(medical_record)).mappings().one()
+            .returning(medical_record)
+        )
+        .mappings()
+        .one()
+    )

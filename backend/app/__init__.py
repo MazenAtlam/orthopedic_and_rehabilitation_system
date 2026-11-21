@@ -87,8 +87,15 @@ def create_app(*, database_url=None, secret=None, demo=None):
 
     @app.errorhandler(HTTPException)
     def http_error(error):
-        codes = {404: "not-found", 405: "not-supported", 413: "too-long", 415: "invalid"}
-        return failure(error.code, codes.get(error.code, "processing"), error.description)
+        codes = {
+            404: "not-found",
+            405: "not-supported",
+            413: "too-long",
+            415: "invalid",
+        }
+        return failure(
+            error.code, codes.get(error.code, "processing"), error.description
+        )
 
     @jwt.unauthorized_loader
     def token_missing(_reason):
