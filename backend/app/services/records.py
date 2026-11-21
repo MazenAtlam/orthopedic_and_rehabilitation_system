@@ -4,6 +4,8 @@ The ``POST /api/v1/records`` REST endpoint belongs to F06 (Hussein) in
 ``app/api/v1/records.py``.
 """
 
+from typing import Any
+
 from flask import g
 from sqlalchemy import select
 
@@ -11,16 +13,16 @@ from app.models.schema_v1 import icd10_code, medical_record, patient, staff
 from app.utils.common import ApiError, as_date, as_int, as_text
 
 
-def clinician_id(connection):
+def clinician_id(connection: Any) -> int:
     identity = connection.scalar(
         select(staff.c.staff_id).where(staff.c.user_id == g.actor["user_id"])
     )
     if identity is None:
         raise ApiError(403, "forbidden", "A linked practitioner profile is required.")
-    return identity
+    return int(identity)
 
 
-def insert_visit(connection, data):
+def insert_visit(connection: Any, data: dict[str, Any]) -> Any:
     patient_id = as_int(data.get("patient_id"), "patient_id")
     visit = as_date(data.get("visit_date"), "visit_date")
     code = as_text(data.get("icd10_code"), "icd10_code", maximum=10).upper()

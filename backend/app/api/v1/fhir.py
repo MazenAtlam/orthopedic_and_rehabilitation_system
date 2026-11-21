@@ -1,5 +1,6 @@
 import re
 from datetime import date, datetime, timezone
+from typing import Any
 from urllib.parse import urlencode
 
 import simplejson
@@ -7,11 +8,11 @@ from flask import Blueprint, Response, g, request, url_for
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.utils.access import load_actor
-from app.utils.common import ApiError, as_int, audit, body, db, require_roles
 from app.fhir.resources import MAPPINGS
 from app.fhir.writes import WRITERS
 from app.models.schema_v1 import cdss_result
+from app.utils.access import load_actor
+from app.utils.common import ApiError, as_int, audit, body, db, require_roles
 
 fhir = Blueprint("fhir", __name__, url_prefix="/api/v1/fhir")
 fhir.before_request(load_actor)
@@ -34,7 +35,7 @@ ISSUE_TYPES = frozenset(
 )
 
 
-def encode(value):
+def encode(value: Any) -> str:
     if isinstance(value, datetime):
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     if isinstance(value, date):
@@ -42,14 +43,16 @@ def encode(value):
     raise TypeError("Unexpected FHIR value.")
 
 
-def fhir_json(payload, status=200, headers=None):
+def fhir_json(
+    payload: Any, status: int = 200, headers: dict[str, str] | None = None
+) -> Response:
     data = simplejson.dumps(
         payload, default=encode, use_decimal=True, ensure_ascii=False
     )
     return Response(data, status=status, headers=headers, content_type=FHIR_JSON)
 
 
-def fhir_error(status, code, message):
+def fhir_error(status: int, code: str, message: str) -> Response:
     return fhir_json(
         {
             "resourceType": "OperationOutcome",
@@ -65,7 +68,7 @@ def fhir_error(status, code, message):
     )
 
 
-def resource_url(kind, identity):
+def resource_url(kind: str, identity: Any) -> str:
     return url_for(
         "fhir.read_resource", kind=kind, identity=str(identity), _external=True
     )
@@ -73,7 +76,7 @@ def resource_url(kind, identity):
 
 @fhir.get("/metadata")
 @require_roles("admin", "staff")
-def metadata():
+def metadata() -> Response:
     resources = []
     for kind, mapping in MAPPINGS.items():
         if g.actor["role"] == "admin" and mapping.clinical:
@@ -115,7 +118,7 @@ def metadata():
     )
 
 
-def mapped(kind):
+def mapped(kind: str) -> tuple[Any, Any]:
     mapping = MAPPINGS.get(kind)
     if mapping is None:
         raise ApiError(
@@ -141,7 +144,7 @@ def mapped(kind):
     return mapping, statement
 
 
-def resource_json(kind, mapping, row, connection):
+def resource_json(kind: str, mapping: Any, row: Any, connection: Any) -> dict[str, Any]:
     return {
         "resourceType": kind,
         "id": str(row[mapping.identity.key]),
@@ -149,7 +152,7 @@ def resource_json(kind, mapping, row, connection):
     }
 
 
-def logical_id(kind, identity):
+def logical_id(kind: str, identity: str) -> int | str:
     if kind == "Observation":
         if not re.fullmatch(r"[1-9][0-9]{0,9}-(pain|rom)", identity):
             raise ApiError(422, "value", "Supply a valid Observation id.")
@@ -158,7 +161,7 @@ def logical_id(kind, identity):
 
 
 @fhir.get("/<kind>/<identity>")
-def read_resource(kind, identity):
+def read_resource(kind: str, identity: str) -> Response:
     mapping, statement = mapped(kind)
     with db().begin() as connection:
         row = (
@@ -177,7 +180,7 @@ def read_resource(kind, identity):
 
 
 @fhir.get("/<kind>")
-def search(kind):
+def search(kind: str) -> Response:
     mapping, statement = mapped(kind)
     allowed = {"_id", "_count", "_page", "_format"}
     if mapping.patient_filter:
@@ -201,8 +204,9 @@ def search(kind):
     page = as_int(request.args.get("_page", "1"), "_page", maximum=1_000_000)
 
     with db().begin() as connection:
-        total = connection.scalar(
-            select(func.count()).select_from(statement.subquery())
+        total = (
+            connection.scalar(select(func.count()).select_from(statement.subquery()))
+            or 0
         )
         rows = (
             connection.execute(
@@ -228,7 +232,7 @@ def search(kind):
 
     links = [{"relation": "self", "url": request.url}]
     if page * size < total:
-        args = request.args.to_dict()
+        args: dict[str, Any] = request.args.to_dict()
         args["_page"] = page + 1
         links.append(
             {"relation": "next", "url": f"{request.base_url}?{urlencode(args)}"}
@@ -246,7 +250,7 @@ def search(kind):
 
 @fhir.post("/<kind>")
 @require_roles("staff")
-def create(kind):
+def create(kind: str) -> Response:
     writer = WRITERS.get(kind)
     if writer is None:
         raise ApiError(

@@ -1,12 +1,12 @@
-from datetime import datetime, time, timedelta, timezone
+from collections.abc import Iterator
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 
 from flask import Blueprint, request
 from sqlalchemy import Date, cast, func, select
 
-from app.utils.access import load_actor
 from app.api.v1.billing import with_balances
-from app.utils.common import ApiError, as_date, db, require_roles, utcnow
 from app.models.schema_v1 import (
     appointment,
     audit_log,
@@ -15,12 +15,14 @@ from app.models.schema_v1 import (
     medical_record,
     payment,
 )
+from app.utils.access import load_actor
+from app.utils.common import ApiError, as_date, db, require_roles, utcnow
 
 reporting = Blueprint("reporting", __name__, url_prefix="/api/v1/reports")
 reporting.before_request(load_actor)
 
 
-def period():
+def period() -> tuple[date, date]:
     end = (
         as_date(request.args["end"], "end")
         if "end" in request.args
@@ -36,27 +38,29 @@ def period():
     return start, end
 
 
-def timestamp_range(start, end):
+def timestamp_range(start: date, end: date) -> tuple[datetime, datetime]:
     return (
         datetime.combine(start, time.min, timezone.utc),
         datetime.combine(end + timedelta(days=1), time.min, timezone.utc),
     )
 
 
-def daily(connection, column, conditions, *, value=None):
+def daily(
+    connection: Any, column: Any, conditions: Any, *, value: Any = None
+) -> dict[Any, Any]:
     day = cast(column, Date).label("date")
     aggregate = func.count() if value is None else func.sum(value)
     statement = select(day, aggregate).where(*conditions).group_by(day)
     return dict(connection.execute(statement).all())
 
 
-def dates(start, end):
+def dates(start: date, end: date) -> Iterator[date]:
     return (start + timedelta(days=offset) for offset in range((end - start).days + 1))
 
 
 @reporting.get("/system")
 @require_roles("admin")
-def system_report():
+def system_report() -> dict[str, Any]:
     start, end = period()
     lower, upper = timestamp_range(start, end)
     window = (appointment.c.start_time >= lower, appointment.c.start_time < upper)
@@ -102,7 +106,7 @@ def system_report():
 
 @reporting.get("/patients")
 @require_roles("admin", "staff")
-def patient_report():
+def patient_report() -> dict[str, Any]:
     start, end = period()
     window = medical_record.c.visit_date.between(start, end)
     with db().connect() as connection:
@@ -132,7 +136,7 @@ def patient_report():
 
 @reporting.get("/financial")
 @require_roles("admin")
-def financial_report():
+def financial_report() -> dict[str, Any]:
     start, end = period()
     lower, upper = timestamp_range(start, end)
     balances = (

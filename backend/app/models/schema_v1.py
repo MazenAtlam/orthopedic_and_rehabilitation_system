@@ -1,5 +1,7 @@
 """Immutable initial schema. New schema changes require a new Alembic revision."""
 
+from typing import Any
+
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -27,11 +29,18 @@ MONEY = Numeric(10, 2)
 UTC_TIME = DateTime(timezone=True)
 
 
-def pk(name):
+def pk(name: str) -> Column[Any]:
     return Column(name, Integer, Identity(), primary_key=True)
 
 
-def fk(name, target, *, optional=False, unique=False, index=False):
+def fk(
+    name: str,
+    target: str,
+    *,
+    optional: bool = False,
+    unique: bool = False,
+    index: bool = False,
+) -> Column[Any]:
     return Column(
         name,
         Integer,
@@ -42,7 +51,9 @@ def fk(name, target, *, optional=False, unique=False, index=False):
     )
 
 
-def choice(name, table, *values, default=None):
+def choice(
+    name: str, table: str, *values: str, default: str | None = None
+) -> Column[Any]:
     return Column(
         name,
         Enum(
@@ -56,7 +67,7 @@ def choice(name, table, *values, default=None):
     )
 
 
-def created(name="created_at"):
+def created(name: str = "created_at") -> Column[Any]:
     return Column(name, UTC_TIME, nullable=False, server_default=func.now())
 
 
@@ -124,7 +135,7 @@ icd10_code = Table(
 )
 
 
-def diagnosis_code(*, optional=False):
+def diagnosis_code(*, optional: bool = False) -> Column[Any]:
     return Column(
         "icd10_code",
         String(10),

@@ -1,8 +1,18 @@
 from decimal import Decimal
+from typing import Any
 
 from flask import Blueprint, current_app, g, request
 from sqlalchemy import func, or_, select
 
+from app.models.schema_v1 import (
+    appointment,
+    icd10_code,
+    invoice,
+    invoice_item,
+    patient,
+    payment,
+    service,
+)
 from app.utils.access import load_actor
 from app.utils.common import (
     MAX_ID,
@@ -19,28 +29,19 @@ from app.utils.common import (
     require_roles,
     utcnow,
 )
-from app.models.schema_v1 import (
-    appointment,
-    icd10_code,
-    invoice,
-    invoice_item,
-    patient,
-    payment,
-    service,
-)
 
 billing = Blueprint("billing", __name__, url_prefix="/api/v1")
 billing.before_request(load_actor)
 
 
-def filter_like(value):
+def filter_like(value: str) -> str:
     return (
         "%" + value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     )
 
 
 @billing.get("/services")
-def services_list():
+def services_list() -> dict[str, Any]:
     statement = select(service)
     if g.actor["role"] != "admin" or request.args.get("include_inactive") != "true":
         statement = statement.where(service.c.is_active.is_(True))
@@ -50,7 +51,7 @@ def services_list():
 
 @billing.post("/services")
 @require_roles("admin")
-def service_save():
+def service_save() -> tuple[dict[str, Any], int]:
     data = body()
     active = data.get("is_active", True)
     if type(active) is not bool:
@@ -65,6 +66,7 @@ def service_save():
     }
     with db().begin() as connection:
         item_id = data.get("service_id")
+        statement: Any
         if item_id is None:
             statement = service.insert()
         else:
@@ -87,7 +89,7 @@ def service_save():
 
 @billing.get("/icd10")
 @require_roles("admin", "staff")
-def icd10_lookup():
+def icd10_lookup() -> dict[str, Any]:
     query = request.args.get("q", "").strip()
     if len(query) > 100:
         raise ApiError(422, "value", "q can have up to 100 characters.")
@@ -104,7 +106,7 @@ def icd10_lookup():
         return page_rows(connection, statement, icd10_code.c.code)
 
 
-def payment_totals():
+def payment_totals() -> Any:
     return (
         select(payment.c.invoice_id, func.sum(payment.c.amount).label("paid"))
         .where(payment.c.status == "success")
@@ -113,7 +115,7 @@ def payment_totals():
     )
 
 
-def with_balances():
+def with_balances() -> Any:
     totals = payment_totals()
     paid = func.coalesce(totals.c.paid, Decimal("0.00"))
     return select(
@@ -125,13 +127,13 @@ def with_balances():
     )
 
 
-def visible(statement):
+def visible(statement: Any) -> Any:
     if g.actor["role"] == "patient":
         return statement.where(invoice.c.patient_id == g.actor["patient_id"])
     return statement
 
 
-def invoice_details(connection, invoice_id):
+def invoice_details(connection: Any, invoice_id: int) -> dict[str, Any]:
     row = (
         connection.execute(
             visible(with_balances()).where(invoice.c.invoice_id == invoice_id)
@@ -174,7 +176,7 @@ def invoice_details(connection, invoice_id):
 
 
 @billing.get("/invoices")
-def invoice_list():
+def invoice_list() -> dict[str, Any]:
     statement = visible(with_balances())
     if "patient_id" in request.args:
         statement = statement.where(
@@ -190,7 +192,7 @@ def invoice_list():
 
 
 @billing.get("/invoices/<int:invoice_id>")
-def invoice_read(invoice_id):
+def invoice_read(invoice_id: int) -> dict[str, Any]:
     invoice_id = as_int(invoice_id, "invoice_id")
     with db().connect() as connection:
         return invoice_details(connection, invoice_id)
@@ -198,7 +200,7 @@ def invoice_read(invoice_id):
 
 @billing.post("/invoices")
 @require_roles("admin", "staff")
-def invoice_create():
+def invoice_create() -> tuple[dict[str, Any], int]:
     data = body()
     patient_id = as_int(data.get("patient_id"), "patient_id")
     appointment_id = data.get("appointment_id")
@@ -220,7 +222,7 @@ def invoice_create():
         or any(not isinstance(i, dict) for i in items)
     ):
         raise ApiError(422, "value", "Provide between 1 and 100 invoice items.")
-    quantities = {}
+    quantities: dict[int, int] = {}
     for item in items:
         service_id = as_int(item.get("service_id"), "service_id")
         if service_id in quantities:
@@ -253,7 +255,7 @@ def invoice_create():
                 422, "code-invalid", "Choose an ICD-10 code from the catalogue."
             )
 
-        prices = dict(
+        prices: dict[int, Decimal] = dict(
             connection.execute(
                 select(service.c.service_id, service.c.price).where(
                     service.c.service_id.in_(quantities), service.c.is_active.is_(True)
@@ -272,18 +274,20 @@ def invoice_create():
             raise ApiError(
                 422, "value", "Invoice total exceeds the maximum allowed amount."
             )
-        invoice_id = connection.scalar(
-            invoice.insert()
-            .values(
-                patient_id=patient_id,
-                appointment_id=appointment_id,
-                icd10_code=diagnosis,
-                issue_date=issue,
-                due_date=due,
-                total_amount=total,
-                status="unpaid" if total else "paid",
+        invoice_id = int(
+            connection.scalar(
+                invoice.insert()
+                .values(
+                    patient_id=patient_id,
+                    appointment_id=appointment_id,
+                    icd10_code=diagnosis,
+                    issue_date=issue,
+                    due_date=due,
+                    total_amount=total,
+                    status="unpaid" if total else "paid",
+                )
+                .returning(invoice.c.invoice_id)
             )
-            .returning(invoice.c.invoice_id)
         )
         connection.execute(
             invoice_item.insert(),
@@ -303,7 +307,7 @@ def invoice_create():
 
 @billing.post("/invoices/<int:invoice_id>/payments")
 @require_roles("admin", "patient")
-def pay(invoice_id):
+def pay(invoice_id: int) -> tuple[dict[str, Any], int]:
     invoice_id = as_int(invoice_id, "invoice_id", maximum=MAX_ID)
     data = body()
     amount = as_money(data.get("amount"), "amount", positive=True)
@@ -393,7 +397,7 @@ def pay(invoice_id):
         return payment_response(connection, saved), 201
 
 
-def payment_response(connection, row):
+def payment_response(connection: Any, row: Any) -> dict[str, Any]:
     fields = ("payment_id", "invoice_id", "amount", "method", "status", "paid_at")
     return {
         "payment": {key: row[key] for key in fields},

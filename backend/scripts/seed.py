@@ -3,6 +3,7 @@
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from secrets import token_urlsafe
+from typing import Any
 
 import bcrypt
 import click
@@ -39,22 +40,22 @@ PATIENT = "patient@ortho.example"
 OTHER = "patient2@ortho.example"
 
 
-def install_command(app):
+def install_command(app: Any) -> None:
     @app.cli.command("seed-demo")
-    def seed_command():
+    def seed_command() -> None:
         if not current_app.config["DEMO_MODE"]:
             raise click.ClickException("Set DEMO_MODE=1 to load fictional examples.")
         created = seed(db())
         click.echo("Loaded demo data." if created else "Demo data already loaded.")
 
 
-def insert_one(connection, table, **values):
+def insert_one(connection: Any, table: Any, **values: Any) -> Any:
     return connection.scalar(
         table.insert().values(**values).returning(next(iter(table.primary_key)))
     )
 
 
-def seed(engine):
+def seed(engine: Any) -> bool:
     with engine.begin() as connection:
         connection.execute(select(func.pg_advisory_xact_lock(320002)))
         connection.execute(
@@ -220,7 +221,7 @@ def seed(engine):
     return True
 
 
-def main():
+def main() -> None:
     from app import create_app
 
     app = create_app(demo=True)

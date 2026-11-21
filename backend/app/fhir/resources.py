@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import String, cast, literal, select, union_all
 
@@ -35,16 +36,16 @@ REPORT_STATUS = {
 }
 
 
-def ref(kind, identity):
+def ref(kind: str, identity: Any) -> dict[str, str]:
     return {"reference": f"{kind}/{identity}"}
 
 
-def r4_text(value):
+def r4_text(value: Any) -> dict[str, Any]:
     return {"text": value}
 
 
-def patient_resource(row, _connection):
-    result = {
+def patient_resource(row: Any, _connection: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "name": [r4_text(row["full_name"])],
         "birthDate": row["birth_date"],
         "gender": row["gender"],
@@ -56,14 +57,14 @@ def patient_resource(row, _connection):
     return result
 
 
-def practitioner_resource(row, _connection):
+def practitioner_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return {"name": [r4_text(row["full_name"])]}
 
 
-def appointment_resource(row, _connection):
+def appointment_resource(row: Any, _connection: Any) -> dict[str, Any]:
     status = APPOINTMENT_STATUS[row["status"]]
     participation = "declined" if status == "cancelled" else "accepted"
-    result = {
+    result: dict[str, Any] = {
         "status": status,
         "start": row["start_time"],
         "end": row["end_time"],
@@ -78,8 +79,8 @@ def appointment_resource(row, _connection):
     return result
 
 
-def encounter_resource(row, _connection):
-    result = {
+def encounter_resource(row: Any, _connection: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "status": "finished",
         "class": {
             "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
@@ -95,7 +96,7 @@ def encounter_resource(row, _connection):
     return result
 
 
-def condition_resource(row, _connection):
+def condition_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return {
         "subject": ref("Patient", row["patient_id"]),
         "encounter": ref("Encounter", row["record_id"]),
@@ -113,8 +114,8 @@ def condition_resource(row, _connection):
     }
 
 
-def medication_resource(row, _connection):
-    result = {
+def medication_resource(row: Any, _connection: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "status": "unknown",
         "intent": "order",
         "medicationCodeableConcept": r4_text(row["medication"]),
@@ -131,11 +132,11 @@ def medication_resource(row, _connection):
     return result
 
 
-def care_plan_resource(row, _connection):
-    period = {"start": row["start_date"]}
+def care_plan_resource(row: Any, _connection: Any) -> dict[str, Any]:
+    period: dict[str, Any] = {"start": row["start_date"]}
     if row["end_date"]:
         period["end"] = row["end_date"]
-    result = {
+    result: dict[str, Any] = {
         "status": "revoked" if row["status"] == "stopped" else row["status"],
         "intent": "plan",
         "subject": ref("Patient", row["patient_id"]),
@@ -148,8 +149,8 @@ def care_plan_resource(row, _connection):
     return result
 
 
-def procedure_resource(row, _connection):
-    result = {
+def procedure_resource(row: Any, _connection: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "status": "completed",
         "code": r4_text("Rehabilitation session"),
         "subject": ref("Patient", row["patient_id"]),
@@ -162,9 +163,9 @@ def procedure_resource(row, _connection):
     return result
 
 
-def observation_resource(row, _connection):
+def observation_resource(row: Any, _connection: Any) -> dict[str, Any]:
     metric = row["metric"]
-    quantity = {"value": row["measurement"], "unit": "score"}
+    quantity: dict[str, Any] = {"value": row["measurement"], "unit": "score"}
     if metric == "rom":
         quantity.update(unit="degrees", system="http://unitsofmeasure.org", code="deg")
     return {
@@ -177,8 +178,8 @@ def observation_resource(row, _connection):
     }
 
 
-def imaging_resource(row, _connection):
-    result = {
+def imaging_resource(row: Any, _connection: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "identifier": [
             {"system": "urn:dicom:uid", "value": f"urn:oid:{row['study_uid']}"}
         ],
@@ -201,8 +202,8 @@ def imaging_resource(row, _connection):
     return result
 
 
-def diagnostic_report_resource(row, _connection):
-    result = {
+def diagnostic_report_resource(row: Any, _connection: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "status": REPORT_STATUS[row["review_status"]],
         "code": r4_text("Orthopedic scan analysis"),
         "subject": ref("Patient", row["patient_id"]),
@@ -219,11 +220,11 @@ def diagnostic_report_resource(row, _connection):
     return result
 
 
-def money(value):
+def money(value: Any) -> dict[str, Any]:
     return {"value": value, "currency": "EGP"}
 
 
-def invoice_resource(row, connection):
+def invoice_resource(row: Any, connection: Any) -> dict[str, Any]:
     items = connection.execute(
         select(invoice_item, service.c.name.label("service_name"))
         .select_from(invoice_item.join(service))
@@ -237,7 +238,7 @@ def invoice_resource(row, connection):
         "paid": "balanced",
         "cancelled": "cancelled",
     }[row["status"]]
-    result = {
+    result: dict[str, Any] = {
         "status": status,
         "subject": subject,
         "date": row["issue_date"],
@@ -275,7 +276,7 @@ def invoice_resource(row, connection):
     return result
 
 
-def payment_resource(row, _connection):
+def payment_resource(row: Any, _connection: Any) -> dict[str, Any]:
     amount = money(row["amount"])
     payment_date = row["paid_at"].date()
     return {
@@ -314,10 +315,10 @@ def payment_resource(row, _connection):
 
 @dataclass(frozen=True)
 class Mapping:
-    query: object
-    identity: object
-    owner: object
-    to_resource: object
+    query: Any
+    identity: Any
+    owner: Any
+    to_resource: Any
     patient_filter: str | None = "patient"
     clinical: bool = True
 

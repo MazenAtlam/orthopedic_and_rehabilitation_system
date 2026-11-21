@@ -4,11 +4,11 @@ from flask import g
 from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request
 from sqlalchemy import select
 
-from app.utils.common import ApiError, db
 from app.models.schema_v1 import patient, user
+from app.utils.common import ApiError, db
 
 
-def load_actor():
+def load_actor() -> None:
     verify_jwt_in_request()
     identity = get_jwt_identity()
     if (

@@ -3,12 +3,11 @@
 import re
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 
-from app.utils.common import ApiError, as_date, as_int, as_money, as_text
 from app.fhir.resources import APPOINTMENT_TYPES, ICD10_SYSTEM, REHAB_METRICS
-from app.services.records import clinician_id, insert_visit
 from app.models.schema_v1 import (
     appointment,
     medical_record,
@@ -18,25 +17,27 @@ from app.models.schema_v1 import (
     staff,
     treatment_plan,
 )
+from app.services.records import clinician_id, insert_visit
+from app.utils.common import ApiError, as_date, as_int, as_money, as_text
 
 CARE_PLAN_STATUS = {"active": "active", "completed": "completed", "revoked": "stopped"}
 
 
-def field(data, key):
+def field(data: dict[str, Any], key: str) -> dict[str, Any]:
     value = data.get(key)
     if not isinstance(value, dict):
         raise ApiError(422, "value", f"Provide {key} as an object.")
     return value
 
 
-def only(data, key):
+def only(data: dict[str, Any], key: str) -> dict[str, Any]:
     value = data.get(key)
     if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], dict):
         raise ApiError(422, "value", f"Provide exactly one {key} entry.")
     return value[0]
 
 
-def reference(value, kind):
+def reference(value: Any, kind: str) -> int:
     target = value.get("reference") if isinstance(value, dict) else None
     match = (
         re.fullmatch(rf"{kind}/([0-9]{{1,10}})", target)
@@ -48,14 +49,14 @@ def reference(value, kind):
     return as_int(match[1], f"{kind} reference")
 
 
-def require_subject(data, expected):
+def require_subject(data: dict[str, Any], expected: Any) -> None:
     if reference(data.get("subject"), "Patient") != expected:
         raise ApiError(
             422, "value", "The subject must match the related record's patient."
         )
 
 
-def instant(value, key):
+def instant(value: Any, key: str) -> datetime:
     if not isinstance(value, str) or not re.fullmatch(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})", value
     ):
@@ -71,12 +72,12 @@ def instant(value, key):
         raise ApiError(422, "value", f"{key} must be a valid FHIR instant.") from None
 
 
-def appointment_participants(data):
+def appointment_participants(data: dict[str, Any]) -> dict[str, int]:
     participants = data.get("participant")
     message = "Provide one accepted Patient and one accepted Practitioner participant."
     if not isinstance(participants, list) or len(participants) != 2:
         raise ApiError(422, "value", message)
-    actors = {}
+    actors: dict[str, int] = {}
     for participant in participants:
         if not isinstance(participant, dict) or participant.get("status") != "accepted":
             raise ApiError(422, "value", message)
@@ -89,7 +90,7 @@ def appointment_participants(data):
     return actors
 
 
-def create_appointment(connection, data):
+def create_appointment(connection: Any, data: dict[str, Any]) -> Any:
     if data.get("status") != "booked":
         raise ApiError(422, "value", "Provide a booked FHIR Appointment resource.")
     start, end = instant(data.get("start"), "start"), instant(data.get("end"), "end")
@@ -122,7 +123,7 @@ def create_appointment(connection, data):
     )
 
 
-def create_encounter(connection, data):
+def create_encounter(connection: Any, data: dict[str, Any]) -> Any:
     if data.get("status") != "finished" or field(data, "class").get("code") != "AMB":
         raise ApiError(422, "value", "Provide a finished ambulatory Encounter.")
     person = reference(data.get("subject"), "Patient")
@@ -146,7 +147,7 @@ def create_encounter(connection, data):
     if coding.get("system") != ICD10_SYSTEM:
         raise ApiError(422, "code-invalid", "Supply the HL7 ICD-10 coding system.")
 
-    values = {
+    values: dict[str, Any] = {
         "patient_id": person,
         "visit_date": field(data, "period").get("start"),
         "icd10_code": coding.get("code"),
@@ -161,7 +162,7 @@ def create_encounter(connection, data):
     return insert_visit(connection, values)["record_id"]
 
 
-def create_medication_request(connection, data):
+def create_medication_request(connection: Any, data: dict[str, Any]) -> Any:
     if data.get("status") != "unknown" or data.get("intent") != "order":
         raise ApiError(
             422,
@@ -198,7 +199,7 @@ def create_medication_request(connection, data):
     )
 
 
-def create_care_plan(connection, data):
+def create_care_plan(connection: Any, data: dict[str, Any]) -> Any:
     status = data.get("status")
     if (
         not isinstance(status, str)
@@ -247,7 +248,7 @@ def create_care_plan(connection, data):
     )
 
 
-def create_procedure(connection, data):
+def create_procedure(connection: Any, data: dict[str, Any]) -> Any:
     if (
         data.get("status") != "completed"
         or field(data, "code").get("text") != "Rehabilitation session"
@@ -278,7 +279,7 @@ def create_procedure(connection, data):
     )
 
 
-def create_observation(connection, data):
+def create_observation(connection: Any, data: dict[str, Any]) -> str:
     label = field(data, "code").get("text")
     if data.get("status") != "final" or label not in REHAB_METRICS.values():
         raise ApiError(
@@ -311,6 +312,7 @@ def create_observation(connection, data):
 
     quantity = field(data, "valueQuantity")
     value = quantity.get("value")
+    column: Any
     if label == REHAB_METRICS["pain"]:
         if (
             type(value) is not int
