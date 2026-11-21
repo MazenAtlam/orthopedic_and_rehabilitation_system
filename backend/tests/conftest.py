@@ -29,7 +29,8 @@ def app():
     engine.dispose()
     if tables.intersection(set(metadata.tables) | {"alembic_version"}):
         pytest.fail(
-            "The test database already contains healthcare tables. Use an empty test database."
+            "The test database already contains healthcare tables. "
+            "Use an empty test database."
         )
 
     with pytest.MonkeyPatch.context() as environment:
@@ -64,7 +65,9 @@ def tokens(app):
         )
         return {
             key: {
-                "Authorization": f"Bearer {create_access_token(identity=str(ids[email]))}"
+                "Authorization": (
+                    f"Bearer {create_access_token(identity=str(ids[email]))}"
+                )
             }
             for key, email in accounts.items()
         }
