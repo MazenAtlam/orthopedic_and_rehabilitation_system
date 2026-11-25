@@ -2,52 +2,65 @@ import React, { useState } from 'react';
 import { FileCode2, Pill, HeartPulse, Plus } from 'lucide-react';
 import { usePermissions } from '../../hooks/usePermissions';
 
-interface Prescription {
-  id: string;
+interface PrescriptionItem {
+  id: number;
   medication: string;
-  dosage: string;
+  dose: string;
   frequency: string;
+  duration: string;
   prescribedBy: string;
   date: string;
 }
 
-const SAMPLE_HL7_ORU = `MSH|^~\\&|PACS_CDSS|MEDCORE_HOSP|EMR_CLIENT|MEDCORE|202611241430||ORU^R01|MSG00042|P|2.5
-PID|1||MRN-884920^^^MEDCORE||Hassan^Omar||19950412|M|||12 Nile St^^Cairo^^11511
-OBR|1|ORD-991|IMG-552|71046^Chest CT w/ Contrast^LN|||202611241410
-OBX|1|TX|CDSS-AI^AI Radiology Finding^L||Right upper lobe pulmonary nodule (6.2mm) - Recommend follow-up||||||F`;
+const SAMPLE_HL7_FHIR = `{
+  "resourceType": "Condition",
+  "clinicalStatus": { "coding": [{ "code": "active" }] },
+  "code": {
+    "coding": [{
+      "system": "http://hl7.org/fhir/sid/icd-10",
+      "code": "S83.511A",
+      "display": "Sprain of anterior cruciate ligament of right knee"
+    }]
+  },
+  "subject": { "reference": "Patient/101", "display": "Omar Hassan" },
+  "recorder": { "reference": "Practitioner/10", "display": "Dr. Karim Nabil" }
+}`;
 
 export const ClinicalEmrPage: React.FC = () => {
   const { isStaff } = usePermissions();
-  const [activeTab, setActiveTab] = useState<'HISTORY' | 'PRESCRIPTIONS' | 'HL7'>('HISTORY');
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([
+  const [activeTab, setActiveTab] = useState<'HISTORY' | 'PRESCRIPTIONS' | 'FHIR'>('HISTORY');
+  const [prescriptions, setPrescriptions] = useState<PrescriptionItem[]>([
     {
-      id: 'rx-1',
-      medication: 'Amoxicillin / Clavulanate',
-      dosage: '875mg / 125mg',
-      frequency: 'Twice daily for 7 days',
+      id: 1,
+      medication: 'Celecoxib',
+      dose: '200 mg',
+      frequency: 'Once daily',
+      duration: '14 days',
       prescribedBy: 'Dr. Karim Nabil',
       date: '2026-11-20',
     },
   ]);
   const [medName, setMedName] = useState('');
-  const [dosage, setDosage] = useState('');
+  const [dose, setDose] = useState('');
   const [frequency, setFrequency] = useState('');
+  const [duration, setDuration] = useState('7 days');
 
   const handleAddRx = (e: React.FormEvent) => {
     e.preventDefault();
     setPrescriptions([
       {
-        id: `rx-${Date.now()}`,
+        id: Date.now(),
         medication: medName,
-        dosage,
+        dose,
         frequency,
+        duration,
         prescribedBy: 'Dr. Karim Nabil',
         date: new Date().toISOString().split('T')[0],
       },
       ...prescriptions,
     ]);
     setMedName('');
-    setDosage('');
+    setDose('');
     setFrequency('');
   };
 
@@ -59,16 +72,16 @@ export const ClinicalEmrPage: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-bold text-slate-900">Omar Hassan</h1>
             <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-              MRN-884920
+              PAT-101
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Male • 31 yrs • Blood Type: O+ • Allergies: Penicillin
+            Male • 31 yrs • Affected Area: Right Knee • ICD-10: S83.511A
           </p>
         </div>
 
         <div className="flex gap-2">
-          {(['HISTORY', 'PRESCRIPTIONS', 'HL7'] as const).map((tab) => (
+          {(['HISTORY', 'PRESCRIPTIONS', 'FHIR'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -78,9 +91,9 @@ export const ClinicalEmrPage: React.FC = () => {
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {tab === 'HISTORY' && 'Medical History & Vitals'}
+              {tab === 'HISTORY' && 'Musculoskeletal EMR'}
               {tab === 'PRESCRIPTIONS' && 'Prescriptions'}
-              {tab === 'HL7' && 'HL7 v2.5 Feed'}
+              {tab === 'FHIR' && 'HL7 FHIR R4 Payload'}
             </button>
           ))}
         </div>
@@ -92,24 +105,24 @@ export const ClinicalEmrPage: React.FC = () => {
           <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
             <h2 className="font-semibold text-slate-900 flex items-center gap-2">
               <HeartPulse className="w-4 h-4 text-rose-500" />
-              Latest Vitals
+              Orthopedic Assessment
             </h2>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-xs text-slate-500 block">Blood Pressure</span>
-                <span className="font-bold text-slate-900">122 / 78 mmHg</span>
+                <span className="text-xs text-slate-500 block">Affected Area</span>
+                <span className="font-bold text-slate-900">Right Knee (ACL)</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-xs text-slate-500 block">Heart Rate</span>
-                <span className="font-bold text-slate-900">74 bpm</span>
+                <span className="text-xs text-slate-500 block">Active Flexion ROM</span>
+                <span className="font-bold text-slate-900">112°</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-xs text-slate-500 block">SpO2</span>
-                <span className="font-bold text-slate-900">98%</span>
+                <span className="text-xs text-slate-500 block">Pain Score</span>
+                <span className="font-bold text-slate-900">2 / 10</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <span className="text-xs text-slate-500 block">Temperature</span>
-                <span className="font-bold text-slate-900">36.8 °C</span>
+                <span className="text-xs text-slate-500 block">ICD-10 Code</span>
+                <span className="font-bold text-indigo-600">S83.511A</span>
               </div>
             </div>
           </div>
@@ -118,12 +131,12 @@ export const ClinicalEmrPage: React.FC = () => {
             <h2 className="font-semibold text-slate-900">Clinical Encounter Notes</h2>
             <div className="p-3.5 border border-slate-100 rounded-lg bg-slate-50 text-sm space-y-1">
               <div className="flex justify-between text-xs text-slate-500">
-                <span>Radiology Consultation</span>
+                <span>Orthopedic Follow-Up</span>
                 <span>Nov 20, 2026</span>
               </div>
               <p className="text-slate-700">
-                Patient referred for high-resolution chest CT due to persistent dry cough. DICOM
-                study uploaded and queued for CDSS nodule analysis.
+                Patient recovering well post-arthroscopic ACL reconstruction. Knee MRI uploaded to
+                Orthanc PACS for CDSS graft integrity assessment.
               </p>
             </div>
           </div>
@@ -134,13 +147,13 @@ export const ClinicalEmrPage: React.FC = () => {
         <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-5">
           <h2 className="font-semibold text-slate-900 flex items-center gap-2">
             <Pill className="w-4 h-4 text-blue-600" />
-            Active Treatment & Prescriptions
+            Active Medications & Prescriptions
           </h2>
 
-          {isClinical && (
+          {isStaff && (
             <form
               onSubmit={handleAddRx}
-              className="grid sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-lg"
+              className="grid sm:grid-cols-5 gap-3 bg-slate-50 p-4 rounded-lg"
             >
               <input
                 required
@@ -151,9 +164,9 @@ export const ClinicalEmrPage: React.FC = () => {
               />
               <input
                 required
-                placeholder="Dosage (e.g., 500mg)"
-                value={dosage}
-                onChange={(e) => setDosage(e.target.value)}
+                placeholder="Dose (e.g., 200mg)"
+                value={dose}
+                onChange={(e) => setDose(e.target.value)}
                 className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
               />
               <input
@@ -161,6 +174,13 @@ export const ClinicalEmrPage: React.FC = () => {
                 placeholder="Frequency"
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value)}
+                className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              />
+              <input
+                required
+                placeholder="Duration"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
                 className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
               />
               <button
@@ -178,10 +198,10 @@ export const ClinicalEmrPage: React.FC = () => {
               <div key={rx.id} className="py-3 flex items-center justify-between text-sm">
                 <div>
                   <p className="font-semibold text-slate-900">
-                    {rx.medication} <span className="text-blue-600">({rx.dosage})</span>
+                    {rx.medication} <span className="text-blue-600">({rx.dose})</span>
                   </p>
                   <p className="text-xs text-slate-500">
-                    {rx.frequency} • Prescribed by {rx.prescribedBy}
+                    {rx.frequency} • {rx.duration} • Prescribed by {rx.prescribedBy}
                   </p>
                 </div>
                 <span className="text-xs text-slate-400">{rx.date}</span>
@@ -191,16 +211,16 @@ export const ClinicalEmrPage: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'HL7' && (
+      {activeTab === 'FHIR' && (
         <div className="bg-slate-900 text-emerald-400 p-5 rounded-xl font-mono text-xs overflow-x-auto space-y-3">
           <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2">
             <span className="flex items-center gap-2">
               <FileCode2 className="w-4 h-4 text-blue-400" />
-              HL7 v2.5 ORU^R01 Diagnostic Observation Message
+              HL7 FHIR R4 Condition Resource (/api/v1/fhir/Condition)
             </span>
-            <span className="text-emerald-400">ACK: AA (Interoperability Verified)</span>
+            <span className="text-emerald-400">FHIR R4 Validated</span>
           </div>
-          <pre className="leading-relaxed">{SAMPLE_HL7_ORU}</pre>
+          <pre className="leading-relaxed">{SAMPLE_HL7_FHIR}</pre>
         </div>
       )}
     </div>
