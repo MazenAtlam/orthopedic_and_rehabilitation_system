@@ -8,13 +8,15 @@ from sqlalchemy import select
 
 from app.models.schema_v1 import user
 from app.utils.common import db
-from scripts.seed import ADMIN, OTHER, PATIENT, STAFF
+from scripts.seed import ADMIN, OTHER, PATIENT, PHYSIO, STAFF, THIRD
 
 ACCOUNTS = {
     "admin": (ADMIN, "admin"),
     "staff": (STAFF, "staff"),
     "patient": (PATIENT, "patient"),
     "other": (OTHER, "patient"),
+    "physio": (PHYSIO, "staff"),
+    "third": (THIRD, "patient"),
 }
 
 

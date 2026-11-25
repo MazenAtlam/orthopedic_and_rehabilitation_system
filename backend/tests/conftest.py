@@ -43,8 +43,9 @@ def app():
     )
     application.config["TESTING"] = True
     engine = application.extensions["ortho_db"]
-    assert seed(engine) is True
-    assert seed(engine) is False
+    with application.app_context():
+        assert seed(engine) is True
+        assert seed(engine) is False
     yield application
     engine.dispose()
 

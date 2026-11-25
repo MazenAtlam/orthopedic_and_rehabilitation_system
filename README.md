@@ -15,7 +15,7 @@ Course project: Healthcare Information System (HCIS), Team 03, Faculty of Engine
 3. [Tech stack](#tech-stack)
 4. [Repository structure](#repository-structure)
 5. [How to install and run (Docker Compose)](#how-to-install-and-run-docker-compose)
-6. [Demo accounts](#demo-accounts-draft)
+6. [Demo accounts](#demo-accounts)
 7. [Database schema](#database-schema)
 8. [Demo (draft)](#demo-draft)
 9. [Testing and code style](#testing-and-code-style)
@@ -131,7 +131,7 @@ Phase 3 features: DICOM upload (Orthanc), OHIF viewer (zoom, pan, rotate, contra
    docker compose up --build
    ```
 
-   On the first start, the backend applies the database migrations (`alembic upgrade head`) and, if `SEED_ON_START=true`, loads the demo data.
+   On the first start, the backend applies the database migrations (`alembic upgrade head`) and, if `SEED_ON_START=true` and `DEMO_MODE=1` in a non-production setup, loads the demo data.
 
 5. **Open the system.**
 
@@ -164,20 +164,28 @@ Phase 3 features: DICOM upload (Orthanc), OHIF viewer (zoom, pan, rotate, contra
 - **The page does not reload after a code change on Windows**: keep `CHOKIDAR_USEPOLLING=true` in `.env`.
 - **Change in `.env` is not applied**: run `docker compose up -d --force-recreate`.
 
-## Demo accounts *(draft)*
+## Demo accounts
 
-The seed script (`backend/scripts/seed.py`) creates these accounts. They are for development only. All accounts use the demo password `Test@12345`. **Never use these accounts or this password in a real deployment.**
+Run the seed on a fresh development database with `DEMO_MODE=1`. The six fictional accounts use `Test@12345`, stored as bcrypt hashes. The seed and demo token command are disabled for production. The clinic sign-in API is scheduled for integration. To test the independent EMR and Phase 2 API now, use `python -m flask --app wsgi demo-fhir-token --role staff` from `backend/`.
 
-| Email | Role | Notes |
-|---|---|---|
-| `admin@hcis.test` | Admin | |
-| `doctor1@hcis.test` | Clinical staff (doctor) | Has a booked appointment with patient 1 tomorrow 10:00-10:30 |
-| `physio1@hcis.test` | Clinical staff (physiotherapist) | |
-| `patient1@hcis.test` | Patient | Has a visit record, a rehabilitation plan, and one unpaid invoice (500.00) |
-| `patient2@hcis.test` | Patient | Has own record (used to test access control) |
-| `patient3@hcis.test` | Patient | Used for the login-block test |
+| Email | Role | Seed data |
+| --- | --- | --- |
+| `admin@hcis.test` | Admin | Can manage service prices and view all three reports. |
+| `doctor1@hcis.test` | Doctor | Booked with patient 1 on the day after seeding, 10:00–10:30 UTC. |
+| `physio1@hcis.test` | Physiotherapist | Separate clinical staff account. |
+| `patient1@hcis.test` | Patient | Has a visit, a rehabilitation plan and one unpaid invoice for 500.00 EGP. |
+| `patient2@hcis.test` | Patient | Has a separate visit and a partial invoice. Use it to verify ownership. |
+| `patient3@hcis.test` | Patient | Dedicated account for future login-block testing. |
 
-Seed services: Consultation 300.00, Physio session 250.00, and one more imaging service. The ICD-10 table is loaded from `database/seed/icd10_codes.csv`. The seed script must be safe to run more than once (no duplicate rows).
+| Service | Price (EGP) |
+| --- | ---: |
+| Consultation | 300.00 |
+| Physio session | 250.00 |
+| X-ray imaging | 400.00 |
+
+The seed can run more than once. The four built-in ICD-10 codes include `M17.9`. Search with `q=M17` in the default demo and use the [WHO archive importer](database/seed/README.md) for the larger catalogue. Patient payments are simulated online payments.
+
+See the [API contract](docs/api/README.md), [database notes](docs/database/README.md) and [architecture](docs/architecture/README.md) for integration details.
 
 ## Database schema
 
