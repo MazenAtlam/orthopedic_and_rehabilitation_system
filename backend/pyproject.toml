@@ -1,10 +1,17 @@
 [tool.black]
 line-length = 88
 target-version = ["py312"]
-extend-exclude = "migrations"
+extend-exclude = '''
+/(
+    migrations
+  | \.venv
+  | venv
+)/
+'''
 
 [tool.mypy]
 python_version = "3.12"
+plugins = ["sqlalchemy.ext.mypy.plugin"]
 ignore_missing_imports = true
 disallow_untyped_defs = true
 exclude = ["migrations/"]

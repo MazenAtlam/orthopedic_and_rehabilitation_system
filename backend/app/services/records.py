@@ -1,70 +1,60 @@
-"""Clinical record persistence helper used by the FHIR Encounter writer.
-
-The ``POST /api/v1/records`` REST endpoint belongs to F06 (Hussein) in
-``app/api/v1/records.py``.
-"""
+"""Clinical record persistence helper used by the FHIR Encounter writer."""
 
 from typing import Any
 
-from flask import g
 from sqlalchemy import select
 
-from app.models.schema_v1 import icd10_code, medical_record, patient, staff
+from app.auth.permissions import current_actor
+from app.models import Icd10Code, MedicalRecord, Patient, Staff
 from app.utils.common import ApiError, as_date, as_int, as_text
 
 
-def clinician_id(connection: Any) -> int:
-    identity = connection.scalar(
-        select(staff.c.staff_id).where(staff.c.user_id == g.actor["user_id"])
+def clinician_id(session: Any) -> int:
+    actor = current_actor()
+    identity = session.scalar(
+        select(Staff.staff_id).where(Staff.user_id == actor.user_id)
     )
     if identity is None:
         raise ApiError(403, "forbidden", "A linked practitioner profile is required.")
     return int(identity)
 
 
-def insert_visit(connection: Any, data: dict[str, Any]) -> Any:
+def insert_visit(session: Any, data: dict[str, Any]) -> MedicalRecord:
     patient_id = as_int(data.get("patient_id"), "patient_id")
     visit = as_date(data.get("visit_date"), "visit_date")
     code = as_text(data.get("icd10_code"), "icd10_code", maximum=10).upper()
-    practitioner = clinician_id(connection)
+    practitioner = clinician_id(session)
     if "staff_id" in data and as_int(data["staff_id"], "staff_id") != practitioner:
         raise ApiError(
             403, "forbidden", "The practitioner must match the signed-in account."
         )
 
     if (
-        connection.scalar(
-            select(patient.c.patient_id).where(patient.c.patient_id == patient_id)
+        session.scalar(
+            select(Patient.patient_id).where(Patient.patient_id == patient_id)
         )
         is None
     ):
         raise ApiError(404, "not-found", "Patient not found.")
-    if (
-        connection.scalar(select(icd10_code.c.code).where(icd10_code.c.code == code))
-        is None
-    ):
+    if session.scalar(select(Icd10Code.code).where(Icd10Code.code == code)) is None:
         raise ApiError(422, "code-invalid", "Choose an ICD-10 code from the catalogue.")
 
-    return (
-        connection.execute(
-            medical_record.insert()
-            .values(
-                patient_id=patient_id,
-                staff_id=practitioner,
-                visit_date=visit,
-                icd10_code=code,
-                **{
-                    name: as_text(data.get(name), name, maximum=limit, optional=True)
-                    for name, limit in (
-                        ("chief_complaint", 4000),
-                        ("affected_area", 100),
-                        ("diagnosis", 4000),
-                        ("notes", 4000),
-                    )
-                },
-            )
-            .returning(medical_record)
-        )
-        .mappings()
-        .one()
+    record = MedicalRecord(
+        patient_id=patient_id,
+        staff_id=practitioner,
+        visit_date=visit,
+        icd10_code=code,
+        chief_complaint=as_text(
+            data.get("chief_complaint"), "chief_complaint", maximum=4000, optional=True
+        ),
+        affected_area=as_text(
+            data.get("affected_area"), "affected_area", maximum=100, optional=True
+        ),
+        diagnosis=as_text(
+            data.get("diagnosis"), "diagnosis", maximum=4000, optional=True
+        ),
+        notes=as_text(data.get("notes"), "notes", maximum=4000, optional=True),
     )
+    session.add(record)
+    session.flush()
+    return record

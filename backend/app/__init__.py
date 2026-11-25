@@ -1,40 +1,40 @@
-"""Flask application factory.
+"""Unified Flask application factory for the Phase 2 Healthcare API."""
 
-Connects Amr's Phase 2 contribution (database, billing, reports, FHIR, demo seed)
-to the team backend package (CORS, ``/api/v1/health``, ``/healthz``).
-"""
+from __future__ import annotations
 
-import os
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from flask import Flask, Response, request
+from flask import Flask
 from flask.json.provider import DefaultJSONProvider
-from flask_cors import CORS
-from flask_jwt_extended import JWTManager
-from sqlalchemy import create_engine, text
-from werkzeug.exceptions import HTTPException
+from sqlalchemy import text
 
+from app.api.v1 import api_v1
 from app.api.v1.billing import billing
-from app.api.v1.fhir import fhir, fhir_error
+from app.api.v1.fhir import fhir
 from app.api.v1.reports import reporting
-from app.config import Config
-from app.utils.common import ApiError
+from app.config import (
+    BaseConfig,
+    normalize_database_url,
+    resolve_config,
+    validate_config,
+)
+from app.errors import register_error_handlers
+from app.extensions import db, init_extensions
+from app.models import Base as _Base  # noqa: F401  (registers models in metadata)
 from scripts.demo_token import install_command as install_demo_token
 from scripts.load_icd10 import install_command as install_icd10
-from scripts.seed import install_command
+from scripts.seed import install_command as install_seed
 
-
-def normalize_database_url(url: str) -> str:
-    if url.startswith("postgresql+psycopg2://"):
-        return "postgresql+psycopg://" + url.removeprefix("postgresql+psycopg2://")
-    if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url.removeprefix("postgresql://")
-    return url
+__all__ = ["HealthcareApp", "JsonProvider", "create_app", "normalize_database_url"]
 
 
 class JsonProvider(DefaultJSONProvider):
+    """Preserve Decimal precision on parse and render UTC ISO-8601 dates."""
+
+    sort_keys = False
+
     def loads(self, s: str | bytes, **kwargs: Any) -> Any:
         kwargs.setdefault("parse_float", Decimal)
         return super().loads(s, **kwargs)
@@ -49,100 +49,68 @@ class JsonProvider(DefaultJSONProvider):
 
 
 class HealthcareApp(Flask):
+    """Flask application subclass using the Decimal-aware JSON provider."""
+
     json_provider_class = JsonProvider
 
 
 def create_app(
+    config_object: str | type[BaseConfig] | None = None,
     *,
     database_url: str | None = None,
     secret: str | None = None,
     demo: bool | None = None,
+    **overrides: Any,
 ) -> HealthcareApp:
-    app_env = os.environ.get("APP_ENV", Config.APP_ENV)
-    url = normalize_database_url(database_url or os.environ.get("DATABASE_URL", ""))
-    secret = secret or os.environ.get("JWT_SECRET_KEY", Config.JWT_SECRET_KEY)
-    if not url.startswith("postgresql+psycopg://"):
-        raise RuntimeError("Set DATABASE_URL to a postgresql+psycopg connection URL.")
-    if (
-        not secret
-        or secret.startswith("replace-with-")
-        or (app_env == "production" and len(secret.encode()) < 32)
-    ):
-        raise RuntimeError("Set JWT_SECRET_KEY to a unique value of at least 32 bytes.")
-
+    """Build and configure the unified Phase 2 Flask application."""
     app = HealthcareApp(__name__, static_folder=None)
-    app.config.from_object(Config)
-    app.config.update(
-        APP_ENV=app_env,
-        DATABASE_URL=url,
-        JWT_SECRET_KEY=secret,
-        JWT_TOKEN_LOCATION=["headers"],
-        MAX_CONTENT_LENGTH=1_048_576,
-        DEMO_MODE=app_env != "production"
-        and (demo if demo is not None else os.environ.get("DEMO_MODE") == "1"),
-    )
-    CORS(app, origins=app.config["CORS_ORIGINS"])
-    app.extensions["ortho_db"] = create_engine(
-        url, pool_pre_ping=True, connect_args={"options": "-c timezone=UTC"}
-    )
-    jwt = JWTManager(app)
+    app.config.from_object(resolve_config(config_object))
+
+    if database_url is not None:
+        normalized = normalize_database_url(database_url)
+        overrides.setdefault("DATABASE_URL", normalized)
+        overrides.setdefault("SQLALCHEMY_DATABASE_URI", normalized)
+    elif "SQLALCHEMY_DATABASE_URI" in overrides and isinstance(
+        overrides["SQLALCHEMY_DATABASE_URI"], str
+    ):
+        overrides["SQLALCHEMY_DATABASE_URI"] = normalize_database_url(
+            overrides["SQLALCHEMY_DATABASE_URI"]
+        )
+    else:
+        env_url = normalize_database_url(
+            str(app.config.get("SQLALCHEMY_DATABASE_URI", ""))
+        )
+        app.config["DATABASE_URL"] = env_url
+        app.config["SQLALCHEMY_DATABASE_URI"] = env_url
+
+    if secret is not None:
+        overrides.setdefault("JWT_SECRET_KEY", secret)
+    if demo is not None:
+        overrides.setdefault(
+            "DEMO_MODE", demo and app.config.get("APP_ENV") != "production"
+        )
+
+    app.config.update(overrides)
+    if app.config.get("APP_ENV") == "production":
+        app.config["DEMO_MODE"] = False
+    validate_config(app.config)
+
+    register_error_handlers(app)
+    init_extensions(app)
+    with app.app_context():
+        app.extensions["ortho_db"] = db.engine
+
+    app.register_blueprint(api_v1)
     for blueprint in (billing, reporting, fhir):
         app.register_blueprint(blueprint)
-    install_command(app)
+
+    install_seed(app)
     install_demo_token(app)
     install_icd10(app)
 
-    def failure(status: int, code: str, message: str) -> Any:
-        path = request.path
-        if path == "/api/v1/fhir" or path.startswith("/api/v1/fhir/"):
-            return fhir_error(status, code, message)
-        return {"error": {"code": code, "message": message}}, status
-
-    @app.errorhandler(ApiError)
-    def api_error(error: ApiError) -> Any:
-        return failure(error.status, error.code, error.message)
-
-    @app.errorhandler(HTTPException)
-    def http_error(error: HTTPException) -> Any:
-        codes = {
-            404: "not-found",
-            405: "not-supported",
-            413: "too-long",
-            415: "invalid",
-        }
-        status = error.code or 500
-        return failure(
-            status,
-            codes.get(status, "processing"),
-            error.description or "Request failed.",
-        )
-
-    @jwt.unauthorized_loader
-    def token_missing(_reason: str) -> Any:
-        return failure(401, "login", "A valid bearer access token is required.")
-
-    @jwt.invalid_token_loader
-    def token_invalid(_reason: str) -> Any:
-        return failure(401, "login", "The access token is invalid.")
-
-    @jwt.expired_token_loader
-    def token_expired(_header: dict[str, Any], _payload: dict[str, Any]) -> Any:
-        return failure(401, "expired", "The access token has expired.")
-
-    @app.after_request
-    def headers(response: Response) -> Response:
-        if request.path.startswith("/api/"):
-            response.headers["Cache-Control"] = "no-store"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
-
-    @app.get("/api/v1/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
-
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
-        with app.extensions["ortho_db"].connect() as connection:
+        with db.engine.connect() as connection:
             connection.execute(text("SELECT 1"))
         return {"status": "ok"}
 

@@ -1,3 +1,5 @@
+"""CLI helper to generate short-lived demo JWTs."""
+
 from datetime import timedelta
 
 import click
@@ -6,17 +8,17 @@ from flask.cli import with_appcontext
 from flask_jwt_extended import create_access_token
 from sqlalchemy import select
 
-from app.models.schema_v1 import user
+from app.models import User, UserRole
 from app.utils.common import db
 from scripts.seed import ADMIN, OTHER, PATIENT, PHYSIO, STAFF, THIRD
 
 ACCOUNTS = {
-    "admin": (ADMIN, "admin"),
-    "staff": (STAFF, "staff"),
-    "patient": (PATIENT, "patient"),
-    "other": (OTHER, "patient"),
-    "physio": (PHYSIO, "staff"),
-    "third": (THIRD, "patient"),
+    "admin": (ADMIN, UserRole.admin),
+    "staff": (STAFF, UserRole.staff),
+    "patient": (PATIENT, UserRole.patient),
+    "other": (OTHER, UserRole.patient),
+    "physio": (PHYSIO, UserRole.staff),
+    "third": (THIRD, UserRole.patient),
 }
 
 
@@ -25,8 +27,8 @@ ACCOUNTS = {
 @with_appcontext
 def demo_token(role: str) -> None:
     if (
-        not current_app.config["DEMO_MODE"]
-        or current_app.config["APP_ENV"] == "production"
+        not current_app.config.get("DEMO_MODE")
+        or current_app.config.get("APP_ENV") == "production"
     ):
         raise click.ClickException(
             "This command requires a non-production DEMO_MODE=1 app."
@@ -34,8 +36,10 @@ def demo_token(role: str) -> None:
     account, expected_role = ACCOUNTS[role]
     with db().connect() as connection:
         identity = connection.scalar(
-            select(user.c.user_id).where(
-                user.c.email == account, user.c.role == expected_role, user.c.is_active
+            select(User.user_id).where(
+                User.email == account,
+                User.role == expected_role,
+                User.is_active.is_(True),
             )
         )
     if identity is None:

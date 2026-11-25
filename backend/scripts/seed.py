@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from enum import Enum
 from typing import Any
 
 import bcrypt
@@ -10,21 +11,29 @@ from flask import current_app
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
-from app.models.schema_v1 import (
-    appointment,
-    icd10_code,
-    invoice,
-    invoice_item,
-    medical_record,
-    patient,
-    payment,
-    prescription,
-    rehab_session,
-    scan,
-    service,
-    staff,
-    treatment_plan,
-    user,
+from app.models import (
+    Appointment,
+    AppointmentStatus,
+    AppointmentType,
+    Gender,
+    Icd10Code,
+    Invoice,
+    InvoiceItem,
+    InvoiceStatus,
+    MedicalRecord,
+    Patient,
+    Payment,
+    PaymentMethod,
+    PaymentStatus,
+    Prescription,
+    RehabSession,
+    Scan,
+    Service,
+    Staff,
+    StaffType,
+    TreatmentPlan,
+    User,
+    UserRole,
 )
 from app.services.imaging import (
     record_annotation,
@@ -64,37 +73,40 @@ def install_command(app: Any) -> None:
         load_demo()
 
 
-def insert_one(connection: Any, table: Any, **values: Any) -> Any:
+def insert_one(connection: Any, model: Any, **values: Any) -> Any:
+    table = model.__table__
     return connection.scalar(
         table.insert().values(**values).returning(next(iter(table.primary_key)))
     )
 
 
 def seed_imaging_example(connection: Any) -> bool:
-    if connection.scalar(
-        select(scan.c.scan_id).where(scan.c.study_uid == DEMO_STUDY_UID)
-    ):
+    if connection.scalar(select(Scan.scan_id).where(Scan.study_uid == DEMO_STUDY_UID)):
         return False
     actor = connection.scalar(
-        select(user.c.user_id).where(
-            user.c.email == STAFF,
-            user.c.is_active,
-            user.c.role == "staff",
+        select(User.user_id).where(
+            User.email == STAFF,
+            User.is_active.is_(True),
+            User.role == UserRole.staff,
         )
     )
     visit = (
         connection.execute(
             select(
-                medical_record.c.record_id,
-                medical_record.c.patient_id,
-                medical_record.c.visit_date,
+                MedicalRecord.record_id,
+                MedicalRecord.patient_id,
+                MedicalRecord.visit_date,
             )
-            .select_from(medical_record.join(patient).join(user))
+            .select_from(
+                MedicalRecord.__table__.join(
+                    Patient.__table__, MedicalRecord.patient_id == Patient.patient_id
+                ).join(User.__table__, Patient.user_id == User.user_id)
+            )
             .where(
-                user.c.email == PATIENT,
-                user.c.role == "patient",
+                User.email == PATIENT,
+                User.role == UserRole.patient,
             )
-            .order_by(medical_record.c.record_id)
+            .order_by(MedicalRecord.record_id)
             .limit(1)
         )
         .mappings()
@@ -104,7 +116,7 @@ def seed_imaging_example(connection: Any) -> bool:
         return False
     study = register_study(
         connection,
-        actor,
+        int(actor),
         {
             "patient_id": visit["patient_id"],
             "record_id": visit["record_id"],
@@ -118,7 +130,7 @@ def seed_imaging_example(connection: Any) -> bool:
     scan_id = study["scan_id"]
     approved = record_cdss_result(
         connection,
-        actor,
+        int(actor),
         scan_id,
         {
             "model_version": "demo-fixture-v1",
@@ -128,10 +140,10 @@ def seed_imaging_example(connection: Any) -> bool:
             "confidence": 0.92,
         },
     )
-    review_cdss_result(connection, actor, approved["result_id"], "accepted")
+    review_cdss_result(connection, int(actor), approved["result_id"], "accepted")
     record_cdss_result(
         connection,
-        actor,
+        int(actor),
         scan_id,
         {
             "model_version": "demo-fixture-v1",
@@ -140,7 +152,7 @@ def seed_imaging_example(connection: Any) -> bool:
     )
     record_annotation(
         connection,
-        actor,
+        int(actor),
         scan_id,
         {
             "type": "note",
@@ -152,29 +164,33 @@ def seed_imaging_example(connection: Any) -> bool:
 
 def seed(engine: Any) -> bool:
     if (
-        not current_app.config["DEMO_MODE"]
-        or current_app.config["APP_ENV"] == "production"
+        not current_app.config.get("DEMO_MODE")
+        or current_app.config.get("APP_ENV") == "production"
     ):
         raise click.ClickException("Seed requires a non-production DEMO_MODE=1 app.")
     with engine.begin() as connection:
         connection.execute(select(func.pg_advisory_xact_lock(320002)))
         connection.execute(
-            insert(icd10_code)
+            insert(Icd10Code)
             .values(
                 [
                     {"code": code, "description": description, "category": category}
                     for code, description, category in ICD10_SAMPLE
                 ]
             )
-            .on_conflict_do_nothing(index_elements=[icd10_code.c.code])
+            .on_conflict_do_nothing(index_elements=[Icd10Code.code])
         )
-        accounts = dict(
+        raw_accounts = (
             connection.execute(
-                select(user.c.email, user.c.role).where(user.c.email.in_(DEMO_ACCOUNTS))
+                select(User.email, User.role).where(User.email.in_(DEMO_ACCOUNTS))
             )
             .tuples()
             .all()
         )
+        accounts = {
+            email: (role.value if isinstance(role, Enum) else str(role))
+            for email, role in raw_accounts
+        }
         if accounts == DEMO_ACCOUNTS:
             return seed_imaging_example(connection)
         if accounts:
@@ -184,9 +200,9 @@ def seed(engine: Any) -> bool:
         ids = {
             email: insert_one(
                 connection,
-                user,
+                User,
                 email=email,
-                role=role,
+                role=UserRole(role),
                 password_hash=bcrypt.hashpw(
                     DEMO_PASSWORD.encode(), bcrypt.gensalt()
                 ).decode(),
@@ -195,49 +211,49 @@ def seed(engine: Any) -> bool:
         }
         clinician = insert_one(
             connection,
-            staff,
+            Staff,
             user_id=ids[STAFF],
             full_name="Demo Clinician",
             specialty="Orthopedics",
-            staff_type="doctor",
+            staff_type=StaffType.doctor,
         )
         insert_one(
             connection,
-            staff,
+            Staff,
             user_id=ids[PHYSIO],
             full_name="Demo Physiotherapist",
             specialty="Rehabilitation",
-            staff_type="physiotherapist",
+            staff_type=StaffType.physiotherapist,
         )
         first = insert_one(
             connection,
-            patient,
+            Patient,
             user_id=ids[PATIENT],
             full_name="Nour Example",
             birth_date=date(1993, 3, 12),
-            gender="female",
+            gender=Gender.female,
         )
         second = insert_one(
             connection,
-            patient,
+            Patient,
             user_id=ids[OTHER],
             full_name="Karim Example",
             birth_date=date(1988, 6, 8),
-            gender="male",
+            gender=Gender.male,
         )
         insert_one(
             connection,
-            patient,
+            Patient,
             user_id=ids[THIRD],
             full_name="Salma Example",
             birth_date=date(1996, 7, 15),
-            gender="female",
+            gender=Gender.female,
         )
         today = utcnow().date()
         service_ids = {
             name: insert_one(
                 connection,
-                service,
+                Service,
                 name=name,
                 description=summary,
                 price=Decimal(price),
@@ -254,30 +270,30 @@ def seed(engine: Any) -> bool:
             start = datetime.combine(visit, time(10), timezone.utc)
             encounter = insert_one(
                 connection,
-                appointment,
+                Appointment,
                 patient_id=patient_id,
                 staff_id=clinician,
-                type="consultation",
+                type=AppointmentType.consultation,
                 start_time=start,
                 end_time=start + timedelta(minutes=30),
-                status="completed",
+                status=AppointmentStatus.completed,
             )
             next_start = datetime.combine(
                 today + timedelta(days=1 + index), time(10), timezone.utc
             )
             insert_one(
                 connection,
-                appointment,
+                Appointment,
                 patient_id=patient_id,
                 staff_id=clinician,
-                type="therapy",
+                type=AppointmentType.therapy,
                 start_time=next_start,
                 end_time=next_start + timedelta(minutes=30),
             )
             code = ("M25.5", "M54.5")[index]
             record = insert_one(
                 connection,
-                medical_record,
+                MedicalRecord,
                 patient_id=patient_id,
                 staff_id=clinician,
                 visit_date=visit,
@@ -288,14 +304,14 @@ def seed(engine: Any) -> bool:
             )
             insert_one(
                 connection,
-                prescription,
+                Prescription,
                 record_id=record,
                 medication="Example medication",
                 instructions="Fictional prescription for interface testing.",
             )
             plan = insert_one(
                 connection,
-                treatment_plan,
+                TreatmentPlan,
                 patient_id=patient_id,
                 staff_id=clinician,
                 title="Mobility follow-up",
@@ -304,7 +320,7 @@ def seed(engine: Any) -> bool:
             )
             insert_one(
                 connection,
-                rehab_session,
+                RehabSession,
                 plan_id=plan,
                 session_date=visit + timedelta(days=1),
                 exercises="Example supervised session",
@@ -318,18 +334,18 @@ def seed(engine: Any) -> bool:
             )
             bill = insert_one(
                 connection,
-                invoice,
+                Invoice,
                 patient_id=patient_id,
                 appointment_id=encounter,
                 icd10_code=code,
                 issue_date=visit,
                 due_date=today + timedelta(days=14),
                 total_amount=price * quantity,
-                status="partial" if index else "unpaid",
+                status=InvoiceStatus.partial if index else InvoiceStatus.unpaid,
             )
             insert_one(
                 connection,
-                invoice_item,
+                InvoiceItem,
                 invoice_id=bill,
                 service_id=service_ids[service_name],
                 quantity=quantity,
@@ -338,11 +354,11 @@ def seed(engine: Any) -> bool:
             if index:
                 insert_one(
                     connection,
-                    payment,
+                    Payment,
                     invoice_id=bill,
                     amount=Decimal("150.00"),
-                    method="cash",
-                    status="success",
+                    method=PaymentMethod.cash,
+                    status=PaymentStatus.success,
                     paid_at=start + timedelta(hours=1),
                 )
         seed_imaging_example(connection)
@@ -357,7 +373,7 @@ def load_demo() -> None:
 def main() -> None:
     from app import create_app
 
-    app = create_app()
+    app = create_app(demo=True)
     with app.app_context():
         try:
             load_demo()

@@ -11,8 +11,14 @@ from app.services.imaging import (
     register_study,
     review_cdss_result,
 )
-from app.models.schema_v1 import audit_log, cdss_result, medical_record, scan, user
+from app.models import AuditLog, CdssResult, MedicalRecord, Scan, User
 from scripts.seed import ADMIN, DEMO_STUDY_UID, PATIENT, STAFF
+
+audit_log = AuditLog.__table__
+cdss_result = CdssResult.__table__
+medical_record = MedicalRecord.__table__
+scan = Scan.__table__
+user = User.__table__
 
 FHIR = "/api/v1/fhir"
 

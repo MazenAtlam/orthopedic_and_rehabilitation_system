@@ -8,7 +8,7 @@ from flask_jwt_extended import create_access_token
 from sqlalchemy import create_engine, inspect, select
 
 from app import create_app, normalize_database_url
-from app.models.schema_v1 import metadata, user
+from app.models import User, metadata
 from scripts.seed import ADMIN, OTHER, PATIENT, STAFF, seed
 
 
@@ -57,8 +57,8 @@ def tokens(app):
     with app.app_context(), engine.connect() as connection:
         ids = dict(
             connection.execute(
-                select(user.c.email, user.c.user_id).where(
-                    user.c.email.in_(accounts.values()),
+                select(User.email, User.user_id).where(
+                    User.email.in_(accounts.values()),
                 )
             )
             .tuples()

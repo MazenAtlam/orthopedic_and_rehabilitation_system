@@ -1,35 +1,41 @@
-# Backend · Database, Billing, Reports & HL7 FHIR (Amr Fekry)
+# Backend · Orthopedic & Rehabilitation System (Team 03)
 
-Orthopedic and Rehabilitation System, Team 03. This package contains the database, billing, reporting, and HL7 FHIR R4 integration work assigned to Amr Fekry in Phase 0 and Phase 1 (Tables 1, 8, and 9).
+Unified Flask + SQLAlchemy ORM backend for Phase 2 (F01–F14 & B1) and Phase 3 imaging/CDSS persistence hooks.
 
 ## Scope
 
 | Area | Details |
 | --- | --- |
-| Schema & migrations (F13) | 17-table PostgreSQL schema (`app/models/schema_v1.py`), initial Phase 2 revision (`migrations/versions/0001_phase2.py`) with `btree_gist` appointment overlap exclusion and append-only `audit_log` trigger, plus imaging/CDSS integrity constraints (`migrations/versions/0002_imaging_integrity.py`). |
+| Schema & migrations (F13) | 17-table PostgreSQL Declarative ORM schema (`app/models/`), baseline Phase 2 revision (`migrations/versions/0001_phase2.py`) with `btree_gist` appointment overlap exclusion and append-only `audit_log` trigger, plus imaging/CDSS integrity constraints (`migrations/versions/0002_imaging_integrity.py`). |
+| Auth, RBAC & accounts (F01–F03) | Patient registration, JWT access + HttpOnly refresh-cookie login/refresh/logout (`/api/v1/auth/*`), role/ownership guards, and admin user management (`/api/v1/users`). |
+| Profiles & scheduling (F04, F05) | Patient and clinical staff directories (`/api/v1/patients`, `/api/v1/staff`), clinician availability (`/api/v1/staff/<id>/availability`), and half-open interval appointment booking, rescheduling, and cancellation (`/api/v1/appointments`). |
+| Clinical EMR & rehab (F06–F08) | Medical visit records (`/api/v1/records`, `/api/v1/patients/<id>/records`), prescriptions (`/api/v1/records/<id>/prescriptions`, `/api/v1/patients/<id>/prescriptions`), rehabilitation treatment plans (`/api/v1/treatment-plans`), and rehab session logging (`/api/v1/treatment-plans/<id>/sessions`). |
 | Billing & payments (F09, F10) | Service price catalogue (`GET`/`POST /api/v1/services`), invoicing with unit-price snapshots (`GET`/`POST /api/v1/invoices`, `GET /api/v1/invoices/<id>`), and idempotent simulated payment processing (`POST /api/v1/invoices/<id>/payments`). |
 | Reporting & analytics (F11) | Date-filtered system, patient, and financial reports (`GET /api/v1/reports/system`, `/patients`, `/financial`). |
 | ICD-10 coding (B1) | Catalogue lookup (`GET /api/v1/icd10?q=`), diagnosis and invoice coding, and diagnosis breakdown in patient reports. |
-| HL7 FHIR R4 (F14) | Capability statement (`GET /api/v1/fhir/metadata`), search (`GET /api/v1/fhir/<ResourceType>`), read (`GET /api/v1/fhir/<ResourceType>/<id>`), create (`POST /api/v1/fhir/<ResourceType>`), and `OperationOutcome` errors across all 13 mapped resources (`Patient`, `Practitioner`, `Appointment`, `Encounter`, `Condition`, `MedicationRequest`, `CarePlan`, `Procedure`, `Observation`, `ImagingStudy`, `DiagnosticReport`, `Invoice`, `PaymentNotice`). |
+| HL7 FHIR R4 (F14) | Capability statement (`GET /api/v1/fhir/metadata`), search (`GET /api/v1/fhir/<ResourceType>`), read (`GET /api/v1/fhir/<ResourceType>/<id>`), create (`POST /api/v1/fhir/<ResourceType>`), and `OperationOutcome` errors across all 13 mapped resources. |
+| Imaging persistence (Phase 3 adapter) | Transactional study, CDSS result, review, and annotation persistence helpers (`app/services/imaging.py`) for Phase 3 Orthanc/CDSS integration. |
 
 ## Backend checks
 
-Use Python 3.12 and a dedicated empty PostgreSQL database. The test account needs permission to install the bundled PostgreSQL extension `btree_gist`. Set `ORTHO_TEST_DATABASE_URL` to that database with a `postgresql+psycopg://` URL. Run the commands from the `backend/` directory:
+Run formatting, linting, static typing, and tests from `backend/`:
 
 ```text
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m black --check .
+python -m flake8 .
+python -m mypy app
 python -m pytest -q
 ```
 
-The tests apply both migrations, seed fictional records, and generate temporary access tokens for the fixture accounts. They cover billing and concurrent payment updates, ownership and role restrictions, date-filtered reports, ICD-10, FHIR read and write interactions, review visibility on `ImagingStudy`/`DiagnosticReport`, and append-only audit writes.
+- `tests/unit/` and `tests/f01_f08/` run without external services (using isolated in-memory SQLite fixtures for F01–F08).
+- `tests/integration/` exercises Alembic migrations, PostgreSQL `btree_gist` exclusion constraints, append-only `audit_log` triggers, concurrent `FOR UPDATE` payment locking, billing, reports, FHIR R4, and imaging persistence against a dedicated empty PostgreSQL database configured via `ORTHO_TEST_DATABASE_URL` (or `DATABASE_URL` when `APP_ENV=testing`).
 
 ## Integration and migrations
 
 Set `DATABASE_URL` and run `python -m alembic upgrade head`. To load development fixtures, set `DEMO_MODE=1` and invoke `python -m flask --app wsgi seed-demo` (or `python -m scripts.seed`).
 
-The API factory in `app/__init__.py` uses `DATABASE_URL` and `JWT_SECRET_KEY`. The access adapter (`app/utils/access.py`) verifies the team's bearer token and loads the database account, role, and patient ownership. The authentication endpoints issuing tokens must share the signing configuration and use the database `user_id` as the token subject.
-
-Billing, ICD-10, and report routes use `/api/v1`. The FHIR base path is `/api/v1/fhir`. Send `Authorization: Bearer <access_token>` and use `GET /api/v1/fhir/metadata` to discover supported resources and interactions for the acting role.
+List endpoints under `/api/v1` return a bare JSON array by default and switch to `{"items": [...], "page", "page_size", "total"}` when `?page=`, `?page_size=`, or `?paginated=true` is supplied. The FHIR base path is `/api/v1/fhir`.
 
 ## PostgreSQL recovery
 

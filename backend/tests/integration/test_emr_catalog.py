@@ -3,8 +3,10 @@ import os
 import pytest
 from sqlalchemy import func, select
 
-from app.models.schema_v1 import icd10_code
+from app.models import Icd10Code
 from scripts.load_icd10 import read_orthopedic_codes
+
+icd10_code = Icd10Code.__table__
 
 
 def test_rejects_unrecognized_archive(tmp_path):

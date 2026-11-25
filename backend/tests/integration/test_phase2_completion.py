@@ -3,8 +3,12 @@ from datetime import date
 from sqlalchemy import select
 
 from app.fhir.resources import ICD10_SYSTEM
-from app.models.schema_v1 import audit_log, cdss_result, scan
+from app.models import AuditLog, CdssResult, Scan
 from app.utils.common import utcnow
+
+audit_log = AuditLog.__table__
+cdss_result = CdssResult.__table__
+scan = Scan.__table__
 
 FHIR = "/api/v1/fhir"
 FHIR_JSON = "application/fhir+json"

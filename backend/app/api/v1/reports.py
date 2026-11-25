@@ -1,22 +1,28 @@
+"""F11 reporting and analytics endpoints (ORM)."""
+
 from collections.abc import Iterator
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from enum import Enum
 from typing import Any
 
 from flask import Blueprint, request
 from sqlalchemy import Date, cast, func, select
 
 from app.api.v1.billing import with_balances
-from app.models.schema_v1 import (
-    appointment,
-    audit_log,
-    icd10_code,
-    invoice,
-    medical_record,
-    payment,
+from app.auth import load_actor
+from app.extensions import db as sqla_db
+from app.models import (
+    Appointment,
+    AuditLog,
+    Icd10Code,
+    Invoice,
+    InvoiceStatus,
+    MedicalRecord,
+    Payment,
+    PaymentStatus,
 )
-from app.utils.access import load_actor
-from app.utils.common import ApiError, as_date, db, require_roles, utcnow
+from app.utils.common import ApiError, as_date, require_roles, utcnow
 
 reporting = Blueprint("reporting", __name__, url_prefix="/api/v1/reports")
 reporting.before_request(load_actor)
@@ -46,12 +52,12 @@ def timestamp_range(start: date, end: date) -> tuple[datetime, datetime]:
 
 
 def daily(
-    connection: Any, column: Any, conditions: Any, *, value: Any = None
+    session: Any, column: Any, conditions: Any, *, value: Any = None
 ) -> dict[Any, Any]:
     day = cast(column, Date).label("date")
     aggregate = func.count() if value is None else func.sum(value)
     statement = select(day, aggregate).where(*conditions).group_by(day)
-    return dict(connection.execute(statement).all())
+    return dict(session.execute(statement).tuples().all())
 
 
 def dates(start: date, end: date) -> Iterator[date]:
@@ -63,25 +69,27 @@ def dates(start: date, end: date) -> Iterator[date]:
 def system_report() -> dict[str, Any]:
     start, end = period()
     lower, upper = timestamp_range(start, end)
-    window = (appointment.c.start_time >= lower, appointment.c.start_time < upper)
-    with db().connect() as connection:
-        appointments = daily(connection, appointment.c.start_time, window)
-        logins = daily(
-            connection,
-            audit_log.c.created_at,
-            (
-                audit_log.c.created_at >= lower,
-                audit_log.c.created_at < upper,
-                audit_log.c.action == "login",
-            ),
-        )
-        statuses = dict(
-            connection.execute(
-                select(appointment.c.status, func.count())
-                .where(*window)
-                .group_by(appointment.c.status)
-            ).all()
-        )
+    window = (Appointment.start_time >= lower, Appointment.start_time < upper)
+    session = sqla_db.session
+    appointments = daily(session, Appointment.start_time, window)
+    logins = daily(
+        session,
+        AuditLog.created_at,
+        (
+            AuditLog.created_at >= lower,
+            AuditLog.created_at < upper,
+            AuditLog.action == "login",
+        ),
+    )
+    raw_statuses = session.execute(
+        select(Appointment.status, func.count())
+        .where(*window)
+        .group_by(Appointment.status)
+    ).all()
+    statuses = {
+        (key.value if isinstance(key, Enum) else str(key)): int(val)
+        for key, val in raw_statuses
+    }
     return {
         "start": start,
         "end": end,
@@ -108,21 +116,25 @@ def system_report() -> dict[str, Any]:
 @require_roles("admin", "staff")
 def patient_report() -> dict[str, Any]:
     start, end = period()
-    window = medical_record.c.visit_date.between(start, end)
-    with db().connect() as connection:
-        patients = connection.scalar(
-            select(func.count(medical_record.c.patient_id.distinct())).where(window)
+    window = MedicalRecord.visit_date.between(start, end)
+    session = sqla_db.session
+    patients = (
+        session.scalar(
+            select(func.count(MedicalRecord.patient_id.distinct())).where(window)
         )
-        visits = daily(connection, medical_record.c.visit_date, [window])
-        count = func.count().label("visits")
-        codes = connection.execute(
-            select(icd10_code.c.code, icd10_code.c.description, count)
-            .select_from(medical_record.join(icd10_code))
-            .where(window)
-            .group_by(icd10_code.c.code, icd10_code.c.description)
-            .order_by(count.desc(), icd10_code.c.code)
-        ).mappings()
-        diagnoses = [dict(row) for row in codes]
+        or 0
+    )
+    visits = daily(session, MedicalRecord.visit_date, [window])
+    count = func.count().label("visits")
+    codes = session.execute(
+        select(Icd10Code.code, Icd10Code.description, count)
+        .select_from(MedicalRecord)
+        .join(Icd10Code, MedicalRecord.icd10_code == Icd10Code.code)
+        .where(window)
+        .group_by(Icd10Code.code, Icd10Code.description)
+        .order_by(count.desc(), Icd10Code.code)
+    ).mappings()
+    diagnoses = [dict(row) for row in codes]
     return {
         "start": start,
         "end": end,
@@ -142,31 +154,32 @@ def financial_report() -> dict[str, Any]:
     balances = (
         with_balances()
         .where(
-            invoice.c.issue_date.between(start, end), invoice.c.status != "cancelled"
+            Invoice.issue_date.between(start, end),
+            Invoice.status != InvoiceStatus.cancelled,
         )
         .subquery()
     )
-    with db().connect() as connection:
-        revenue = daily(
-            connection,
-            payment.c.paid_at,
-            (
-                payment.c.paid_at >= lower,
-                payment.c.paid_at < upper,
-                payment.c.status == "success",
-            ),
-            value=payment.c.amount,
+    session = sqla_db.session
+    revenue = daily(
+        session,
+        Payment.paid_at,
+        (
+            Payment.paid_at >= lower,
+            Payment.paid_at < upper,
+            Payment.status == PaymentStatus.success,
+        ),
+        value=Payment.amount,
+    )
+    outstanding = (
+        session.execute(
+            select(
+                func.count().label("count"),
+                func.sum(balances.c.balance).label("amount"),
+            ).where(balances.c.balance > 0)
         )
-        outstanding = (
-            connection.execute(
-                select(
-                    func.count().label("count"),
-                    func.sum(balances.c.balance).label("amount"),
-                ).where(balances.c.balance > 0)
-            )
-            .mappings()
-            .one()
-        )
+        .mappings()
+        .one()
+    )
     zero = Decimal("0.00")
     return {
         "start": start,
