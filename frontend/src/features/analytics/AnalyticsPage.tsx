@@ -13,18 +13,17 @@ const MONTHLY_STATS = [
 ];
 
 export const AnalyticsPage: React.FC = () => {
-  const { isAdmin, isClinical } = usePermissions();
+  const { isAdmin, isStaff } = usePermissions();
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">System Overview & Analytics</h1>
         <p className="text-sm text-slate-500">
-          Real-time operational metrics, patient volume, and clinical performance
+          Real-time operational metrics, patient volume, and orthopedic clinical performance
         </p>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
@@ -44,7 +43,7 @@ export const AnalyticsPage: React.FC = () => {
           <span className="text-xs text-slate-500">92% attendance rate</span>
         </div>
 
-        {(isAdmin || isClinical) && (
+        {(isAdmin || isStaff) && (
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
             <div className="flex items-center justify-between text-slate-500 mb-2">
               <span className="text-xs font-medium uppercase">CDSS Scans Analyzed</span>
@@ -67,10 +66,9 @@ export const AnalyticsPage: React.FC = () => {
         )}
       </div>
 
-      {/* Visual Bar Chart */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
         <h2 className="text-base font-semibold text-slate-900 mb-4">
-          6-Month Patient Visits & Department Load
+          6-Month Patient Visits & Clinic Load
         </h2>
         <div className="grid grid-cols-6 gap-4 items-end h-52 pt-6 px-2 border-b border-slate-100">
           {MONTHLY_STATS.map((item) => {

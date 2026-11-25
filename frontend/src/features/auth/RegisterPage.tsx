@@ -14,7 +14,17 @@ export const RegisterPage: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    login({ id: `pat-${Date.now()}`, fullName, email, role: 'PATIENT' }, 'mock-patient-jwt');
+    login(
+      {
+        user_id: Date.now(),
+        full_name: fullName,
+        email,
+        role: 'patient',
+        is_active: true,
+        patient_id: 101,
+      },
+      'mock-patient-jwt',
+    );
     navigate('/dashboard');
   };
 

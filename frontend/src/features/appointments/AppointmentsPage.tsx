@@ -1,31 +1,33 @@
 import React, { useState } from 'react';
 import { Plus, Clock, CheckCircle2, XCircle } from 'lucide-react';
-import { Appointment } from '../../types';
+import type { Appointment } from '../../types';
 import { formatDateTime } from '../../utils/formatters';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const INITIAL_APPOINTMENTS: Appointment[] = [
   {
-    id: 'apt-101',
-    patientId: 'usr-pat-01',
-    patientName: 'Omar Hassan',
-    doctorId: 'usr-doc-01',
-    doctorName: 'Dr. Karim Nabil',
-    department: 'Radiology',
-    scheduledAt: '2026-11-25T10:30:00Z',
-    status: 'SCHEDULED',
-    reason: 'Chest CT Scan Follow-up',
+    appointment_id: 101,
+    patient_id: 101,
+    patient_name: 'Omar Hassan',
+    staff_id: 10,
+    staff_name: 'Dr. Karim Nabil',
+    type: 'imaging',
+    start_time: '2026-11-25T10:30:00Z',
+    end_time: '2026-11-25T11:00:00Z',
+    status: 'booked',
+    notes: 'Knee MRI Follow-up',
   },
   {
-    id: 'apt-102',
-    patientId: 'pat-202',
-    patientName: 'Mariam Adel',
-    doctorId: 'usr-doc-02',
-    doctorName: 'Dr. Hoda Youssef',
-    department: 'Cardiology',
-    scheduledAt: '2026-11-25T12:00:00Z',
-    status: 'CHECKED_IN',
-    reason: 'Routine Echocardiogram',
+    appointment_id: 102,
+    patient_id: 102,
+    patient_name: 'Mariam Adel',
+    staff_id: 11,
+    staff_name: 'Dr. Hoda Youssef',
+    type: 'therapy',
+    start_time: '2026-11-25T12:00:00Z',
+    end_time: '2026-11-25T12:45:00Z',
+    status: 'booked',
+    notes: 'Post-op Shoulder Rehabilitation Session',
   },
 ];
 
@@ -33,32 +35,37 @@ export const AppointmentsPage: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
   const [showModal, setShowModal] = useState(false);
   const [patientName, setPatientName] = useState('');
-  const [department, setDepartment] = useState('Radiology');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [reason, setReason] = useState('');
+  const [aptType, setAptType] = useState<Appointment['type']>('consultation');
+  const [startTime, setStartTime] = useState('');
+  const [notes, setNotes] = useState('');
   const { isPatient } = usePermissions();
 
   const handleBook = (e: React.FormEvent) => {
     e.preventDefault();
+    const startIso = new Date(startTime).toISOString();
+    const endIso = new Date(new Date(startTime).getTime() + 30 * 60000).toISOString();
     const newApt: Appointment = {
-      id: `apt-${Date.now()}`,
-      patientId: 'usr-pat-01',
-      patientName: isPatient ? 'Omar Hassan' : patientName,
-      doctorId: 'usr-doc-01',
-      doctorName: 'Dr. Karim Nabil',
-      department,
-      scheduledAt: new Date(scheduledAt).toISOString(),
-      status: 'SCHEDULED',
-      reason,
+      appointment_id: Date.now(),
+      patient_id: 101,
+      patient_name: isPatient ? 'Omar Hassan' : patientName,
+      staff_id: 10,
+      staff_name: 'Dr. Karim Nabil',
+      type: aptType,
+      start_time: startIso,
+      end_time: endIso,
+      status: 'booked',
+      notes,
     };
     setAppointments([newApt, ...appointments]);
     setShowModal(false);
     setPatientName('');
-    setReason('');
+    setNotes('');
   };
 
-  const updateStatus = (id: string, status: Appointment['status']) => {
-    setAppointments((prev) => prev.map((apt) => (apt.id === id ? { ...apt, status } : apt)));
+  const updateStatus = (id: number, status: Appointment['status']) => {
+    setAppointments((prev) =>
+      prev.map((apt) => (apt.appointment_id === id ? { ...apt, status } : apt)),
+    );
   };
 
   return (
@@ -67,7 +74,7 @@ export const AppointmentsPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Appointment Management</h1>
           <p className="text-sm text-slate-500">
-            Schedule and manage clinical consultations & scans
+            Schedule consultations, physiotherapy sessions, and orthopedic imaging
           </p>
         </div>
         <button
@@ -84,29 +91,29 @@ export const AppointmentsPage: React.FC = () => {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase">
               <th className="py-3.5 px-4">Patient</th>
-              <th className="py-3.5 px-4">Department & Doctor</th>
+              <th className="py-3.5 px-4">Type & Clinician</th>
               <th className="py-3.5 px-4">Date & Time</th>
-              <th className="py-3.5 px-4">Reason</th>
+              <th className="py-3.5 px-4">Notes</th>
               <th className="py-3.5 px-4">Status</th>
               <th className="py-3.5 px-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
             {appointments.map((apt) => (
-              <tr key={apt.id} className="hover:bg-slate-50">
-                <td className="py-3.5 px-4 font-medium text-slate-900">{apt.patientName}</td>
+              <tr key={apt.appointment_id} className="hover:bg-slate-50">
+                <td className="py-3.5 px-4 font-medium text-slate-900">{apt.patient_name}</td>
                 <td className="py-3.5 px-4">
-                  <div className="text-slate-900">{apt.department}</div>
-                  <div className="text-xs text-slate-500">{apt.doctorName}</div>
+                  <div className="text-slate-900 capitalize">{apt.type}</div>
+                  <div className="text-xs text-slate-500">{apt.staff_name}</div>
                 </td>
-                <td className="py-3.5 px-4 text-slate-600">{formatDateTime(apt.scheduledAt)}</td>
-                <td className="py-3.5 px-4 text-slate-600">{apt.reason}</td>
+                <td className="py-3.5 px-4 text-slate-600">{formatDateTime(apt.start_time)}</td>
+                <td className="py-3.5 px-4 text-slate-600">{apt.notes}</td>
                 <td className="py-3.5 px-4">
                   <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      apt.status === 'COMPLETED'
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium uppercase ${
+                      apt.status === 'completed'
                         ? 'bg-emerald-50 text-emerald-700'
-                        : apt.status === 'CANCELLED'
+                        : apt.status === 'cancelled' || apt.status === 'no_show'
                           ? 'bg-rose-50 text-rose-700'
                           : 'bg-amber-50 text-amber-700'
                     }`}
@@ -116,17 +123,17 @@ export const AppointmentsPage: React.FC = () => {
                   </span>
                 </td>
                 <td className="py-3.5 px-4 text-right space-x-2">
-                  {apt.status !== 'COMPLETED' && apt.status !== 'CANCELLED' && (
+                  {apt.status === 'booked' && (
                     <>
                       <button
-                        onClick={() => updateStatus(apt.id, 'COMPLETED')}
+                        onClick={() => updateStatus(apt.appointment_id, 'completed')}
                         title="Mark Completed"
                         className="text-emerald-600 hover:bg-emerald-50 p-1.5 rounded-lg"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => updateStatus(apt.id, 'CANCELLED')}
+                        onClick={() => updateStatus(apt.appointment_id, 'cancelled')}
                         title="Cancel"
                         className="text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg"
                       >
@@ -141,7 +148,6 @@ export const AppointmentsPage: React.FC = () => {
         </table>
       </div>
 
-      {/* Booking Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-md w-full p-6 space-y-4">
@@ -161,16 +167,17 @@ export const AppointmentsPage: React.FC = () => {
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Department</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Appointment Type
+                </label>
                 <select
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
+                  value={aptType}
+                  onChange={(e) => setAptType(e.target.value as Appointment['type'])}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                 >
-                  <option value="Radiology">Radiology</option>
-                  <option value="Cardiology">Cardiology</option>
-                  <option value="Neurology">Neurology</option>
-                  <option value="General Medicine">General Medicine</option>
+                  <option value="consultation">Orthopedic Consultation</option>
+                  <option value="therapy">Rehabilitation / Physiotherapy</option>
+                  <option value="imaging">Radiology / Imaging</option>
                 </select>
               </div>
               <div>
@@ -178,20 +185,20 @@ export const AppointmentsPage: React.FC = () => {
                 <input
                   type="datetime-local"
                   required
-                  value={scheduledAt}
-                  onChange={(e) => setScheduledAt(e.target.value)}
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Clinical Reason
+                  Clinical Notes
                 </label>
                 <input
                   required
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="e.g., Brain MRI, Follow-up"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="e.g., Right knee X-ray, ACL checkup"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                 />
               </div>

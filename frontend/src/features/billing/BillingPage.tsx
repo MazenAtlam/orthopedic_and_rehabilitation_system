@@ -1,39 +1,39 @@
 import React, { useState } from 'react';
 import { Plus, CreditCard, CheckCircle } from 'lucide-react';
-import { Invoice } from '../../types';
+import type { Invoice } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const ICD10_CATALOG = [
-  { code: 'R05.9', desc: 'Cough, unspecified' },
-  { code: 'I10', desc: 'Essential (primary) hypertension' },
-  { code: 'J18.9', desc: 'Pneumonia, unspecified organism' },
-  { code: 'G43.909', desc: 'Migraine, unspecified, not intractable' },
-  { code: 'Z01.89', desc: 'Encounter for other specified special examinations (Radiology)' },
+  { code: 'M23.51', desc: 'Chronic instability of knee, right knee' },
+  { code: 'S83.511A', desc: 'Sprain of anterior cruciate ligament of right knee' },
+  { code: 'M54.50', desc: 'Low back pain, unspecified' },
+  { code: 'M17.11', desc: 'Unilateral primary osteoarthritis, right knee' },
+  { code: 'Z47.89', desc: 'Encounter for other orthopedic aftercare' },
 ];
 
 export const BillingPage: React.FC = () => {
-  const { isAdmin } = usePermissions();
+  const { isAdmin, isStaff } = usePermissions();
   const [invoices, setInvoices] = useState<Invoice[]>([
     {
-      id: 'INV-2026-089',
-      patientId: 'usr-pat-01',
-      patientName: 'Omar Hassan',
-      issuedAt: '2026-11-21T10:00:00Z',
-      dueDate: '2026-12-05T10:00:00Z',
+      invoice_id: 2026089,
+      patient_id: 101,
+      patient_name: 'Omar Hassan',
+      icd10_code: 'S83.511A',
+      issue_date: '2026-11-21T10:00:00Z',
+      due_date: '2026-12-05T10:00:00Z',
       items: [
         {
-          id: 'item-1',
-          description: 'Chest CT Scan + AI CDSS Diagnostic Report',
-          icd10Code: 'R05.9',
-          icd10Description: 'Cough, unspecified',
+          item_id: 1,
+          invoice_id: 2026089,
+          service_id: 12,
+          service_name: 'Knee MRI Scan + AI Orthopedic CDSS Report',
           quantity: 1,
-          unitPrice: 320,
+          unit_price: 320,
         },
       ],
-      taxRate: 0.05,
-      totalAmount: 336,
-      status: 'PENDING',
+      total_amount: 320,
+      status: 'unpaid',
     },
   ]);
 
@@ -43,35 +43,37 @@ export const BillingPage: React.FC = () => {
 
   const handleCreateInvoice = (e: React.FormEvent) => {
     e.preventDefault();
-    const icdObj = ICD10_CATALOG.find((c) => c.code === selectedIcd) || ICD10_CATALOG[0];
     const price = parseFloat(amount) || 0;
+    const invoiceId = Math.floor(100000 + Math.random() * 900000);
     const newInv: Invoice = {
-      id: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
-      patientId: 'usr-pat-01',
-      patientName: 'Omar Hassan',
-      issuedAt: new Date().toISOString(),
-      dueDate: new Date(Date.now() + 14 * 86400000).toISOString(),
+      invoice_id: invoiceId,
+      patient_id: 101,
+      patient_name: 'Omar Hassan',
+      icd10_code: selectedIcd,
+      issue_date: new Date().toISOString(),
+      due_date: new Date(Date.now() + 14 * 86400000).toISOString(),
       items: [
         {
-          id: `it-${Date.now()}`,
-          description: serviceDesc,
-          icd10Code: icdObj.code,
-          icd10Description: icdObj.desc,
+          item_id: Date.now(),
+          invoice_id: invoiceId,
+          service_id: 15,
+          service_name: serviceDesc,
           quantity: 1,
-          unitPrice: price,
+          unit_price: price,
         },
       ],
-      taxRate: 0.05,
-      totalAmount: price * 1.05,
-      status: 'PENDING',
+      total_amount: price,
+      status: 'unpaid',
     };
     setInvoices([newInv, ...invoices]);
     setServiceDesc('');
     setAmount('');
   };
 
-  const markAsPaid = (id: string) => {
-    setInvoices((prev) => prev.map((inv) => (inv.id === id ? { ...inv, status: 'PAID' } : inv)));
+  const markAsPaid = (id: number) => {
+    setInvoices((prev) =>
+      prev.map((inv) => (inv.invoice_id === id ? { ...inv, status: 'paid' } : inv)),
+    );
   };
 
   return (
@@ -79,11 +81,11 @@ export const BillingPage: React.FC = () => {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Billing, Invoicing & ICD-10 Coding</h1>
         <p className="text-sm text-slate-500">
-          Standardized medical billing linked with ICD-10 diagnostic codes
+          Standardized orthopedic billing linked with ICD-10 diagnostic codes
         </p>
       </div>
 
-      {isAdmin && (
+      {(isAdmin || isStaff) && (
         <form
           onSubmit={handleCreateInvoice}
           className="bg-white p-5 rounded-xl border border-slate-200 grid sm:grid-cols-4 gap-3 items-end"
@@ -110,16 +112,14 @@ export const BillingPage: React.FC = () => {
             </label>
             <input
               required
-              placeholder="e.g., MRI Brain Scan"
+              placeholder="e.g., Physiotherapy Session"
               value={serviceDesc}
               onChange={(e) => setServiceDesc(e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Base Amount (USD)
-            </label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Amount (USD)</label>
             <input
               type="number"
               required
@@ -140,58 +140,59 @@ export const BillingPage: React.FC = () => {
       )}
 
       <div className="space-y-4">
-        {invoices.map((inv) => (
-          <div
-            key={inv.id}
-            className="bg-white p-5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-4"
-          >
-            <div className="space-y-1">
-              <div className="flex items-center gap-2.5">
-                <span className="font-bold text-slate-900">{inv.id}</span>
-                <span
-                  className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
-                    inv.status === 'PAID'
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : 'bg-amber-50 text-amber-700'
-                  }`}
-                >
-                  {inv.status}
-                </span>
-              </div>
-              <p className="text-sm text-slate-700">{inv.items[0]?.description}</p>
-              <p className="text-xs text-slate-500">
-                ICD-10:{' '}
-                <span className="font-mono font-semibold text-indigo-600">
-                  {inv.items[0]?.icd10Code}
-                </span>{' '}
-                ({inv.items[0]?.icd10Description}) • Issued {formatDate(inv.issuedAt)}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-xs text-slate-400">Total (incl. 5% tax)</p>
-                <p className="text-lg font-bold text-slate-900">
-                  {formatCurrency(inv.totalAmount)}
+        {invoices.map((inv) => {
+          const icdMatch = ICD10_CATALOG.find((c) => c.code === inv.icd10_code);
+          return (
+            <div
+              key={inv.invoice_id}
+              className="bg-white p-5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-4"
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2.5">
+                  <span className="font-bold text-slate-900">INV-{inv.invoice_id}</span>
+                  <span
+                    className={`text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase ${
+                      inv.status === 'paid'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {inv.status}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-700">{inv.items?.[0]?.service_name}</p>
+                <p className="text-xs text-slate-500">
+                  ICD-10:{' '}
+                  <span className="font-mono font-semibold text-indigo-600">{inv.icd10_code}</span>{' '}
+                  {icdMatch ? `(${icdMatch.desc})` : ''} • Issued {formatDate(inv.issue_date)}
                 </p>
               </div>
-              {inv.status === 'PENDING' ? (
-                <button
-                  onClick={() => markAsPaid(inv.id)}
-                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                >
-                  <CreditCard className="w-4 h-4" />
-                  Pay Now
-                </button>
-              ) : (
-                <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                  <CheckCircle className="w-4 h-4" />
-                  Settled
-                </span>
-              )}
+
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-xs text-slate-400">Total Amount</p>
+                  <p className="text-lg font-bold text-slate-900">
+                    {formatCurrency(inv.total_amount)}
+                  </p>
+                </div>
+                {inv.status !== 'paid' ? (
+                  <button
+                    onClick={() => markAsPaid(inv.invoice_id)}
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    Pay Now
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                    <CheckCircle className="w-4 h-4" />
+                    Settled
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -17,7 +17,7 @@ OBR|1|ORD-991|IMG-552|71046^Chest CT w/ Contrast^LN|||202611241410
 OBX|1|TX|CDSS-AI^AI Radiology Finding^L||Right upper lobe pulmonary nodule (6.2mm) - Recommend follow-up||||||F`;
 
 export const ClinicalEmrPage: React.FC = () => {
-  const { isClinical } = usePermissions();
+  const { isStaff } = usePermissions();
   const [activeTab, setActiveTab] = useState<'HISTORY' | 'PRESCRIPTIONS' | 'HL7'>('HISTORY');
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([
     {
