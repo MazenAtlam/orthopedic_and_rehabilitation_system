@@ -13,7 +13,7 @@ from flask.cli import with_appcontext
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 
-from app.models.schema_v1 import icd10_code
+from app.models import Icd10Code
 from app.utils.common import db
 
 MEMBER = "icd102019syst_codes.txt"
@@ -56,10 +56,10 @@ def read_orthopedic_codes(archive: Path) -> list[dict[str, str]]:
 
 def load_codes(engine: Engine, codes: list[dict[str, str]]) -> None:
     with engine.begin() as connection:
-        statement = insert(icd10_code).values(codes)
+        statement = insert(Icd10Code).values(codes)
         connection.execute(
             statement.on_conflict_do_update(
-                index_elements=[icd10_code.c.code],
+                index_elements=[Icd10Code.code],
                 set_={
                     "description": statement.excluded.description,
                     "category": statement.excluded.category,

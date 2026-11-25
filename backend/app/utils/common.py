@@ -1,33 +1,40 @@
-from collections.abc import Callable
+"""Shared validation, audit, pagination, and database helpers."""
+
+from collections.abc import Callable, Mapping
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+from enum import Enum
 from functools import wraps
 from typing import Any
 
-from flask import current_app, g, has_request_context, request
-from sqlalchemy import func, select
+from flask import Response, has_request_context, request
+from sqlalchemy import func, insert, select
+from sqlalchemy.engine import Connection, Engine
 
-from app.models.schema_v1 import audit_log
+from app.api.v1.responses import list_response
+from app.auth.permissions import current_actor
+from app.errors import ApiError
+from app.extensions import db as sqla_db
+from app.models import AuditLog
 
 MAX_ID = 2_147_483_647
 MAX_MONEY = Decimal("99999999.99")
 CENT = Decimal("0.01")
 
 
-class ApiError(Exception):
-    def __init__(self, status: int, code: str, message: str) -> None:
-        super().__init__(message)
-        self.status = status
-        self.code = code
-        self.message = message
-
-
-def db() -> Any:
-    return current_app.extensions["ortho_db"]
+def db() -> Engine:
+    return sqla_db.engine
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def clean_row(row: Mapping[Any, Any]) -> dict[str, Any]:
+    return {
+        str(key): (value.value if isinstance(value, Enum) else value)
+        for key, value in row.items()
+    }
 
 
 def require_roles(
@@ -36,7 +43,8 @@ def require_roles(
     def wrap(handler: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(handler)
         def check(*args: Any, **kwargs: Any) -> Any:
-            if g.actor["role"] not in roles:
+            actor = current_actor()
+            if actor.role.value not in roles:
                 raise ApiError(
                     403, "forbidden", "Your role cannot perform this action."
                 )
@@ -47,17 +55,27 @@ def require_roles(
     return wrap
 
 
-def audit(
-    connection: Any, action: str, resource: str, user_id: int | None = None
-) -> None:
-    connection.execute(
-        audit_log.insert().values(
-            user_id=g.actor["user_id"] if user_id is None else user_id,
-            action=action,
-            resource=resource,
-            ip_address=request.remote_addr if has_request_context() else None,
+def audit(target: Any, action: str, resource: str, user_id: int | None = None) -> None:
+    actor_id = current_actor().user_id if user_id is None else user_id
+    ip_addr = request.remote_addr if has_request_context() else None
+    if isinstance(target, Connection):
+        target.execute(
+            insert(AuditLog).values(
+                user_id=actor_id,
+                action=action,
+                resource=resource,
+                ip_address=ip_addr,
+            )
         )
-    )
+    else:
+        target.add(
+            AuditLog(
+                user_id=actor_id,
+                action=action,
+                resource=resource,
+                ip_address=ip_addr,
+            )
+        )
 
 
 def body() -> dict[str, Any]:
@@ -129,16 +147,12 @@ def as_date(value: Any, name: str) -> date:
         ) from None
 
 
-def page_rows(connection: Any, statement: Any, order: Any) -> dict[str, Any]:
+def list_rows(session: Any, statement: Any, order: Any) -> Response:
     page = as_int(request.args.get("page", "1"), "page", maximum=1_000_000)
     size = as_int(request.args.get("page_size", "25"), "page_size", maximum=100)
-    total = connection.scalar(select(func.count()).select_from(statement.subquery()))
-    items = connection.execute(
+    total = session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    rows = session.execute(
         statement.order_by(order).offset((page - 1) * size).limit(size)
     ).mappings()
-    return {
-        "items": [dict(item) for item in items],
-        "page": page,
-        "page_size": size,
-        "total": total,
-    }
+    items = [clean_row(item) for item in rows]
+    return list_response(items, total=int(total), page=page, page_size=size)

@@ -9,7 +9,9 @@ from sqlalchemy.exc import DBAPIError
 
 from app.utils.common import utcnow
 from app.fhir.resources import ICD10_SYSTEM
-from app.models.schema_v1 import audit_log, metadata
+from app.models import AuditLog, metadata
+
+audit_log = AuditLog.__table__
 
 
 def bill_for(client, headers, patient_id, *, service_id=1, due=None):
@@ -86,7 +88,9 @@ def test_catalogue_prices_are_snapshots(client, tokens, people):
     ).json
     assert read["total_amount"] == read["items"][0]["unit_price"] == "90.25"
     active = client.get("/api/v1/services", headers=tokens["patient"]).json
-    assert all(item["service_id"] != item_id for item in active["items"])
+    assert all(item["service_id"] != item_id for item in active)
+    paged = client.get("/api/v1/services?page=1", headers=tokens["patient"]).json
+    assert paged["items"] == active
     attempt = client.post("/api/v1/services", headers=tokens["staff"], json={})
     assert attempt.status_code == 403
 
@@ -176,7 +180,7 @@ def test_invoice_ownership_and_role_matrix(client, tokens, people):
         == 403
     )
     listing = client.get(
-        f"/api/v1/invoices?patient_id={people[0]}", headers=tokens["other"]
+        f"/api/v1/invoices?patient_id={people[0]}&page=1", headers=tokens["other"]
     )
     assert listing.json["total"] == 0
 
@@ -221,7 +225,7 @@ def test_reports_match_seeded_historical_payments_and_visits(client, tokens):
 def test_icd10_search_and_invalid_invoice_code(client, tokens, people):
     result = client.get("/api/v1/icd10?q=M17", headers=tokens["staff"])
     assert result.status_code == 200
-    assert "M17.9" in {item["code"] for item in result.json["items"]}
+    assert "M17.9" in {item["code"] for item in result.json}
     assert (
         client.get("/api/v1/icd10?q=M17", headers=tokens["patient"]).status_code == 403
     )

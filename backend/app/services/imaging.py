@@ -6,20 +6,23 @@ from decimal import Decimal
 from typing import Any
 
 import simplejson
-from sqlalchemy import Text, cast, literal, select
+from sqlalchemy import Text, cast, literal, select, update
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.engine import Connection
 
-from app.utils.common import ApiError, as_date, as_int, as_text, audit
-from app.models.schema_v1 import (
-    annotation,
-    cdss_result,
-    medical_record,
-    patient,
-    scan,
-    staff,
-    user,
+from app.models import (
+    Annotation,
+    AnnotationType,
+    CdssResult,
+    MedicalRecord,
+    Patient,
+    ReviewStatus,
+    Scan,
+    Staff,
+    User,
+    UserRole,
 )
+from app.utils.common import ApiError, as_date, as_int, as_text, audit, clean_row
 
 UID = re.compile(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))+")
 ANNOTATION_TYPES = ("arrow", "length", "angle", "note")
@@ -27,12 +30,13 @@ ANNOTATION_TYPES = ("arrow", "length", "angle", "note")
 
 def staff_identity(connection: Connection, actor_user_id: int) -> int:
     identity = connection.scalar(
-        select(staff.c.staff_id)
-        .select_from(staff.join(user))
+        select(Staff.staff_id)
+        .select_from(Staff)
+        .join(User, Staff.user_id == User.user_id)
         .where(
-            user.c.user_id == actor_user_id,
-            user.c.is_active,
-            user.c.role == "staff",
+            User.user_id == actor_user_id,
+            User.is_active.is_(True),
+            User.role == UserRole.staff,
         )
     )
     if identity is None:
@@ -50,9 +54,9 @@ def register_study(
         record_id = as_int(record_id, "record_id")
         if (
             connection.scalar(
-                select(medical_record.c.record_id).where(
-                    medical_record.c.record_id == record_id,
-                    medical_record.c.patient_id == patient_id,
+                select(MedicalRecord.record_id).where(
+                    MedicalRecord.record_id == record_id,
+                    MedicalRecord.patient_id == patient_id,
                 )
             )
             is None
@@ -62,7 +66,7 @@ def register_study(
             )
     elif (
         connection.scalar(
-            select(patient.c.patient_id).where(patient.c.patient_id == patient_id)
+            select(Patient.patient_id).where(Patient.patient_id == patient_id)
         )
         is None
     ):
@@ -89,29 +93,30 @@ def register_study(
     }
     row = (
         connection.execute(
-            insert(scan)
+            insert(Scan)
             .values(
                 **values,
                 uploaded_by=uploader,
             )
-            .on_conflict_do_nothing(index_elements=[scan.c.study_uid])
-            .returning(scan)
+            .on_conflict_do_nothing(index_elements=[Scan.study_uid])
+            .returning(Scan.__table__)
         )
         .mappings()
         .one_or_none()
     )
 
     if row is not None:
+        cleaned = clean_row(row)
         audit(
             connection,
             "imaging.study.register",
-            f"scan/{row['scan_id']}",
+            f"scan/{cleaned['scan_id']}",
             actor_user_id,
         )
-        return dict(row)
+        return cleaned
 
-    existing = (
-        connection.execute(select(scan).where(scan.c.study_uid == study_uid))
+    existing = clean_row(
+        connection.execute(select(Scan.__table__).where(Scan.study_uid == study_uid))
         .mappings()
         .one()
     )
@@ -121,15 +126,12 @@ def register_study(
             "conflict",
             "This DICOM study UID is already registered with different metadata.",
         )
-    return dict(existing)
+    return existing
 
 
 def existing_scan(connection: Connection, scan_id: int) -> int:
     scan_id = as_int(scan_id, "scan_id")
-    if (
-        connection.scalar(select(scan.c.scan_id).where(scan.c.scan_id == scan_id))
-        is None
-    ):
+    if connection.scalar(select(Scan.scan_id).where(Scan.scan_id == scan_id)) is None:
         raise ApiError(404, "not-found", "Study not found.")
     return scan_id
 
@@ -149,9 +151,9 @@ def record_cdss_result(
             raise ApiError(422, "value", "confidence must be a number from 0 to 1.")
         confidence = float(confidence)
 
-    row = (
+    row = clean_row(
         connection.execute(
-            cdss_result.insert()
+            insert(CdssResult)
             .values(
                 scan_id=scan_id,
                 model_version=as_text(
@@ -167,9 +169,9 @@ def record_cdss_result(
                     maximum=10000,
                     optional=True,
                 ),
-                review_status="pending",
+                review_status=ReviewStatus.pending,
             )
-            .returning(cdss_result)
+            .returning(CdssResult.__table__)
         )
         .mappings()
         .one()
@@ -180,7 +182,7 @@ def record_cdss_result(
         f"cdss_result/{row['result_id']}",
         actor_user_id,
     )
-    return dict(row)
+    return row
 
 
 def review_cdss_result(
@@ -191,28 +193,29 @@ def review_cdss_result(
     if decision not in ("accepted", "rejected"):
         raise ApiError(422, "value", "decision must be accepted or rejected.")
 
-    query = cdss_result.c.result_id == result_id
-    row = (
-        connection.execute(select(cdss_result).where(query).with_for_update())
+    query = CdssResult.result_id == result_id
+    raw_row = (
+        connection.execute(select(CdssResult.__table__).where(query).with_for_update())
         .mappings()
         .one_or_none()
     )
-    if row is None:
+    if raw_row is None:
         raise ApiError(404, "not-found", "Result not found.")
+    row = clean_row(raw_row)
     if row["review_status"] == decision and row["reviewed_by"] == reviewer:
-        return dict(row)
+        return row
     if row["review_status"] != "pending":
         raise ApiError(409, "conflict", "This result has already been reviewed.")
 
-    updated = (
+    updated = clean_row(
         connection.execute(
-            cdss_result.update()
+            update(CdssResult)
             .where(query)
             .values(
-                review_status=decision,
+                review_status=ReviewStatus(decision),
                 reviewed_by=reviewer,
             )
-            .returning(cdss_result)
+            .returning(CdssResult.__table__)
         )
         .mappings()
         .one()
@@ -223,7 +226,7 @@ def review_cdss_result(
         f"cdss_result/{result_id}",
         actor_user_id,
     )
-    return dict(updated)
+    return updated
 
 
 def record_annotation(
@@ -248,17 +251,17 @@ def record_annotation(
             422, "value", "data must contain valid JSON up to 64 KiB."
         ) from None
 
-    row = (
+    row = clean_row(
         connection.execute(
-            annotation.insert()
+            insert(Annotation)
             .values(
                 scan_id=scan_id,
                 created_by=author,
-                type=kind,
+                type=AnnotationType(kind),
                 data=cast(literal(encoded, type_=Text()), JSONB),
                 note=as_text(payload.get("note"), "note", maximum=2000, optional=True),
             )
-            .returning(annotation)
+            .returning(Annotation.__table__)
         )
         .mappings()
         .one()
@@ -269,4 +272,4 @@ def record_annotation(
         f"annotation/{row['annotation_id']}",
         actor_user_id,
     )
-    return dict(row)
+    return row

@@ -1,23 +1,26 @@
+"""FHIR R4 resource mappings backed by the ORM models."""
+
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import String, cast, literal, select, union_all
 
-from app.models.schema_v1 import (
-    appointment,
-    cdss_result,
-    icd10_code,
-    invoice,
-    invoice_item,
-    medical_record,
-    patient,
-    payment,
-    prescription,
-    rehab_session,
-    scan,
-    service,
-    staff,
-    treatment_plan,
+from app.models import (
+    Appointment,
+    CdssResult,
+    Icd10Code,
+    Invoice,
+    InvoiceItem,
+    MedicalRecord,
+    Patient,
+    Payment,
+    PaymentStatus,
+    Prescription,
+    RehabSession,
+    Scan,
+    Service,
+    Staff,
+    TreatmentPlan,
 )
 
 ICD10_SYSTEM = "http://hl7.org/fhir/sid/icd-10"
@@ -44,7 +47,7 @@ def r4_text(value: Any) -> dict[str, Any]:
     return {"text": value}
 
 
-def patient_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def patient_resource(row: Any, _session: Any) -> dict[str, Any]:
     result: dict[str, Any] = {
         "name": [r4_text(row["full_name"])],
         "birthDate": row["birth_date"],
@@ -57,11 +60,11 @@ def patient_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return result
 
 
-def practitioner_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def practitioner_resource(row: Any, _session: Any) -> dict[str, Any]:
     return {"name": [r4_text(row["full_name"])]}
 
 
-def appointment_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def appointment_resource(row: Any, _session: Any) -> dict[str, Any]:
     status = APPOINTMENT_STATUS[row["status"]]
     participation = "declined" if status == "cancelled" else "accepted"
     result: dict[str, Any] = {
@@ -79,7 +82,7 @@ def appointment_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return result
 
 
-def encounter_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def encounter_resource(row: Any, _session: Any) -> dict[str, Any]:
     result: dict[str, Any] = {
         "status": "finished",
         "class": {
@@ -96,7 +99,7 @@ def encounter_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return result
 
 
-def condition_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def condition_resource(row: Any, _session: Any) -> dict[str, Any]:
     return {
         "subject": ref("Patient", row["patient_id"]),
         "encounter": ref("Encounter", row["record_id"]),
@@ -114,7 +117,7 @@ def condition_resource(row: Any, _connection: Any) -> dict[str, Any]:
     }
 
 
-def medication_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def medication_resource(row: Any, _session: Any) -> dict[str, Any]:
     result: dict[str, Any] = {
         "status": "unknown",
         "intent": "order",
@@ -132,7 +135,7 @@ def medication_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return result
 
 
-def care_plan_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def care_plan_resource(row: Any, _session: Any) -> dict[str, Any]:
     period: dict[str, Any] = {"start": row["start_date"]}
     if row["end_date"]:
         period["end"] = row["end_date"]
@@ -149,7 +152,7 @@ def care_plan_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return result
 
 
-def procedure_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def procedure_resource(row: Any, _session: Any) -> dict[str, Any]:
     result: dict[str, Any] = {
         "status": "completed",
         "code": r4_text("Rehabilitation session"),
@@ -163,7 +166,7 @@ def procedure_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return result
 
 
-def observation_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def observation_resource(row: Any, _session: Any) -> dict[str, Any]:
     metric = row["metric"]
     quantity: dict[str, Any] = {"value": row["measurement"], "unit": "score"}
     if metric == "rom":
@@ -178,7 +181,7 @@ def observation_resource(row: Any, _connection: Any) -> dict[str, Any]:
     }
 
 
-def imaging_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def imaging_resource(row: Any, _session: Any) -> dict[str, Any]:
     result: dict[str, Any] = {
         "identifier": [
             {"system": "urn:dicom:uid", "value": f"urn:oid:{row['study_uid']}"}
@@ -202,7 +205,7 @@ def imaging_resource(row: Any, _connection: Any) -> dict[str, Any]:
     return result
 
 
-def diagnostic_report_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def diagnostic_report_resource(row: Any, _session: Any) -> dict[str, Any]:
     result: dict[str, Any] = {
         "status": REPORT_STATUS[row["review_status"]],
         "code": r4_text("Orthopedic scan analysis"),
@@ -224,12 +227,13 @@ def money(value: Any) -> dict[str, Any]:
     return {"value": value, "currency": "EGP"}
 
 
-def invoice_resource(row: Any, connection: Any) -> dict[str, Any]:
-    items = connection.execute(
-        select(invoice_item, service.c.name.label("service_name"))
-        .select_from(invoice_item.join(service))
-        .where(invoice_item.c.invoice_id == row["invoice_id"])
-        .order_by(invoice_item.c.item_id)
+def invoice_resource(row: Any, session: Any) -> dict[str, Any]:
+    items = session.execute(
+        select(InvoiceItem.__table__, Service.name.label("service_name"))
+        .select_from(InvoiceItem)
+        .join(Service, InvoiceItem.service_id == Service.service_id)
+        .where(InvoiceItem.invoice_id == row["invoice_id"])
+        .order_by(InvoiceItem.item_id)
     ).mappings()
     subject = ref("Patient", row["patient_id"])
     status = {
@@ -276,7 +280,7 @@ def invoice_resource(row: Any, connection: Any) -> dict[str, Any]:
     return result
 
 
-def payment_resource(row: Any, _connection: Any) -> dict[str, Any]:
+def payment_resource(row: Any, _session: Any) -> dict[str, Any]:
     amount = money(row["amount"])
     payment_date = row["paid_at"].date()
     return {
@@ -323,82 +327,94 @@ class Mapping:
     clinical: bool = True
 
 
-clinical_sessions = rehab_session.join(treatment_plan)
+clinical_sessions = RehabSession.__table__.join(
+    TreatmentPlan.__table__, RehabSession.plan_id == TreatmentPlan.plan_id
+)
 observations = union_all(
     *[
         select(
-            (cast(rehab_session.c.session_id, String) + "-" + metric).label(
+            (cast(RehabSession.session_id, String) + "-" + metric).label(
                 "observation_id"
             ),
-            rehab_session.c.session_id,
-            rehab_session.c.session_date,
-            treatment_plan.c.patient_id,
+            RehabSession.session_id,
+            RehabSession.session_date,
+            TreatmentPlan.patient_id,
             literal(metric).label("metric"),
             field.label("measurement"),
         )
         .select_from(clinical_sessions)
         .where(field.is_not(None))
         for metric, field in (
-            ("pain", rehab_session.c.pain_score),
-            ("rom", rehab_session.c.range_of_motion),
+            ("pain", RehabSession.pain_score),
+            ("rom", RehabSession.range_of_motion),
         )
     ]
 ).subquery()
 
 MAPPINGS = {
     "Patient": Mapping(
-        select(patient),
-        patient.c.patient_id,
-        patient.c.patient_id,
+        select(Patient.__table__),
+        Patient.__table__.c.patient_id,
+        Patient.__table__.c.patient_id,
         patient_resource,
         None,
         False,
     ),
     "Practitioner": Mapping(
-        select(staff), staff.c.staff_id, None, practitioner_resource, None, False
+        select(Staff.__table__),
+        Staff.__table__.c.staff_id,
+        None,
+        practitioner_resource,
+        None,
+        False,
     ),
     "Appointment": Mapping(
-        select(appointment),
-        appointment.c.appointment_id,
-        appointment.c.patient_id,
+        select(Appointment.__table__),
+        Appointment.__table__.c.appointment_id,
+        Appointment.__table__.c.patient_id,
         appointment_resource,
         "patient",
         False,
     ),
     "Encounter": Mapping(
-        select(medical_record),
-        medical_record.c.record_id,
-        medical_record.c.patient_id,
+        select(MedicalRecord.__table__),
+        MedicalRecord.__table__.c.record_id,
+        MedicalRecord.__table__.c.patient_id,
         encounter_resource,
     ),
     "Condition": Mapping(
-        select(medical_record, icd10_code.c.description).select_from(
-            medical_record.join(icd10_code)
+        select(MedicalRecord.__table__, Icd10Code.description).select_from(
+            MedicalRecord.__table__.join(
+                Icd10Code.__table__, MedicalRecord.icd10_code == Icd10Code.code
+            )
         ),
-        medical_record.c.record_id,
-        medical_record.c.patient_id,
+        MedicalRecord.__table__.c.record_id,
+        MedicalRecord.__table__.c.patient_id,
         condition_resource,
     ),
     "MedicationRequest": Mapping(
-        select(prescription, medical_record.c.patient_id).select_from(
-            prescription.join(medical_record)
+        select(Prescription.__table__, MedicalRecord.patient_id).select_from(
+            Prescription.__table__.join(
+                MedicalRecord.__table__,
+                Prescription.record_id == MedicalRecord.record_id,
+            )
         ),
-        prescription.c.prescription_id,
-        medical_record.c.patient_id,
+        Prescription.__table__.c.prescription_id,
+        MedicalRecord.__table__.c.patient_id,
         medication_resource,
     ),
     "CarePlan": Mapping(
-        select(treatment_plan),
-        treatment_plan.c.plan_id,
-        treatment_plan.c.patient_id,
+        select(TreatmentPlan.__table__),
+        TreatmentPlan.__table__.c.plan_id,
+        TreatmentPlan.__table__.c.patient_id,
         care_plan_resource,
     ),
     "Procedure": Mapping(
-        select(rehab_session, treatment_plan.c.patient_id).select_from(
+        select(RehabSession.__table__, TreatmentPlan.patient_id).select_from(
             clinical_sessions
         ),
-        rehab_session.c.session_id,
-        treatment_plan.c.patient_id,
+        RehabSession.__table__.c.session_id,
+        TreatmentPlan.__table__.c.patient_id,
         procedure_resource,
     ),
     "Observation": Mapping(
@@ -408,30 +424,44 @@ MAPPINGS = {
         observation_resource,
     ),
     "ImagingStudy": Mapping(
-        select(scan), scan.c.scan_id, scan.c.patient_id, imaging_resource
+        select(Scan.__table__),
+        Scan.__table__.c.scan_id,
+        Scan.__table__.c.patient_id,
+        imaging_resource,
     ),
     "DiagnosticReport": Mapping(
         select(
-            cdss_result, scan.c.patient_id, scan.c.record_id, scan.c.study_date
-        ).select_from(cdss_result.join(scan)),
-        cdss_result.c.result_id,
-        scan.c.patient_id,
+            CdssResult.__table__,
+            Scan.patient_id,
+            Scan.record_id,
+            Scan.study_date,
+        ).select_from(
+            CdssResult.__table__.join(
+                Scan.__table__, CdssResult.scan_id == Scan.scan_id
+            )
+        ),
+        CdssResult.__table__.c.result_id,
+        Scan.__table__.c.patient_id,
         diagnostic_report_resource,
     ),
     "Invoice": Mapping(
-        select(invoice),
-        invoice.c.invoice_id,
-        invoice.c.patient_id,
+        select(Invoice.__table__),
+        Invoice.__table__.c.invoice_id,
+        Invoice.__table__.c.patient_id,
         invoice_resource,
         "subject",
         False,
     ),
     "PaymentNotice": Mapping(
-        select(payment, invoice.c.patient_id)
-        .select_from(payment.join(invoice))
-        .where(payment.c.status == "success"),
-        payment.c.payment_id,
-        invoice.c.patient_id,
+        select(Payment.__table__, Invoice.patient_id)
+        .select_from(
+            Payment.__table__.join(
+                Invoice.__table__, Payment.invoice_id == Invoice.invoice_id
+            )
+        )
+        .where(Payment.status == PaymentStatus.success),
+        Payment.__table__.c.payment_id,
+        Invoice.__table__.c.patient_id,
         payment_resource,
         None,
         False,

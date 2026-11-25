@@ -5,15 +5,21 @@ import bcrypt
 import pytest
 from sqlalchemy import select
 
-from app.models.schema_v1 import appointment, medical_record, patient, staff, user
+from app.models import Appointment, MedicalRecord, Patient, Staff, User
 from app.utils.common import utcnow
 from scripts.seed import ADMIN, OTHER, PATIENT, PHYSIO, STAFF, THIRD
+
+appointment = Appointment.__table__
+medical_record = MedicalRecord.__table__
+patient = Patient.__table__
+staff = Staff.__table__
+user = User.__table__
 
 
 def service_map(client, headers):
     result = client.get("/api/v1/services", headers=headers)
     assert result.status_code == 200
-    return {entry["name"]: entry for entry in result.json["items"]}
+    return {entry["name"]: entry for entry in result.json}
 
 
 def test_seed_matches_the_readme_and_is_idempotent(app, client, tokens):
@@ -77,7 +83,7 @@ def test_seed_matches_the_readme_and_is_idempotent(app, client, tokens):
         "Physio session": "250.00",
         "X-ray imaging": "400.00",
     }
-    only_bill = client.get("/api/v1/invoices", headers=tokens["patient"]).json
+    only_bill = client.get("/api/v1/invoices?page=1", headers=tokens["patient"]).json
     assert only_bill["total"] == 1
     row = only_bill["items"][0]
     assert (row["total_amount"], row["balance"], row["status"]) == (

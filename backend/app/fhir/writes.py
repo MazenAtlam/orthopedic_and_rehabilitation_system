@@ -1,27 +1,34 @@
-"""Create the FHIR resources represented by staff workflows in the Phase 1 schema."""
+"""Create FHIR resources represented by staff workflows using the ORM models."""
 
 import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import Range
 
 from app.fhir.resources import APPOINTMENT_TYPES, ICD10_SYSTEM, REHAB_METRICS
-from app.models.schema_v1 import (
-    appointment,
-    medical_record,
-    patient,
-    prescription,
-    rehab_session,
-    staff,
-    treatment_plan,
+from app.models import (
+    Appointment,
+    AppointmentStatus,
+    AppointmentType,
+    MedicalRecord,
+    Patient,
+    Prescription,
+    RehabSession,
+    Staff,
+    TreatmentPlan,
+    TreatmentPlanStatus,
 )
 from app.services.records import clinician_id, insert_visit
 from app.utils.common import ApiError, as_date, as_int, as_money, as_text
 
-CARE_PLAN_STATUS = {"active": "active", "completed": "completed", "revoked": "stopped"}
+CARE_PLAN_STATUS = {
+    "active": TreatmentPlanStatus.active,
+    "completed": TreatmentPlanStatus.completed,
+    "revoked": TreatmentPlanStatus.stopped,
+}
 
 
 def field(data: dict[str, Any], key: str) -> dict[str, Any]:
@@ -97,40 +104,54 @@ def appointment_slot(start: datetime, end: datetime) -> Range[datetime]:
     return Range(start, end, bounds="[)")
 
 
-def create_appointment(connection: Any, data: dict[str, Any]) -> Any:
+def create_appointment(session: Any, data: dict[str, Any]) -> int:
     if data.get("status") != "booked":
         raise ApiError(422, "value", "Provide a booked FHIR Appointment resource.")
-    slot = appointment_slot(
-        instant(data.get("start"), "start"), instant(data.get("end"), "end")
-    )
+    start = instant(data.get("start"), "start")
+    end = instant(data.get("end"), "end")
+    slot = appointment_slot(start, end)
     actors = appointment_participants(data)
     selected = data.get("appointmentType", {"text": "consultation"})
     if not isinstance(selected, dict) or selected.get("text") not in APPOINTMENT_TYPES:
         raise ApiError(
             422, "value", "Choose a consultation, therapy or imaging appointment type."
         )
-    for column, kind in (
-        (patient.c.patient_id, "Patient"),
-        (staff.c.staff_id, "Practitioner"),
-    ):
-        if connection.scalar(select(column).where(column == actors[kind])) is None:
-            raise ApiError(422, "not-found", f"The referenced {kind} is unavailable.")
-    return connection.scalar(
-        appointment.insert()
-        .values(
-            patient_id=actors["Patient"],
-            staff_id=actors["Practitioner"],
-            type=selected["text"],
-            start_time=slot.lower,
-            end_time=slot.upper,
-            status="booked",
-            notes=as_text(data.get("comment"), "comment", maximum=4000, optional=True),
+    if session.get(Patient, actors["Patient"]) is None:
+        raise ApiError(422, "not-found", "The referenced Patient is unavailable.")
+    if session.get(Staff, actors["Practitioner"]) is None:
+        raise ApiError(422, "not-found", "The referenced Practitioner is unavailable.")
+
+    assert slot.lower is not None and slot.upper is not None
+    overlap = session.scalar(
+        select(Appointment.appointment_id)
+        .where(
+            Appointment.staff_id == actors["Practitioner"],
+            Appointment.status == AppointmentStatus.booked,
+            Appointment.start_time < slot.upper,
+            Appointment.end_time > slot.lower,
         )
-        .returning(appointment.c.appointment_id)
+        .limit(1)
     )
+    if overlap is not None:
+        raise ApiError(
+            409, "conflict", "The practitioner already has a booking in this period."
+        )
+
+    record = Appointment(
+        patient_id=actors["Patient"],
+        staff_id=actors["Practitioner"],
+        type=AppointmentType(selected["text"]),
+        start_time=slot.lower,
+        end_time=slot.upper,
+        status=AppointmentStatus.booked,
+        notes=as_text(data.get("comment"), "comment", maximum=4000, optional=True),
+    )
+    session.add(record)
+    session.flush()
+    return record.appointment_id
 
 
-def create_encounter(connection: Any, data: dict[str, Any]) -> Any:
+def create_encounter(session: Any, data: dict[str, Any]) -> int:
     if data.get("status") != "finished" or field(data, "class").get("code") != "AMB":
         raise ApiError(422, "value", "Provide a finished ambulatory Encounter.")
     person = reference(data.get("subject"), "Patient")
@@ -166,10 +187,10 @@ def create_encounter(connection: Any, data: dict[str, Any]) -> Any:
         )
     if "reasonCode" in data:
         values["chief_complaint"] = only(data, "reasonCode").get("text")
-    return insert_visit(connection, values)["record_id"]
+    return insert_visit(session, values).record_id
 
 
-def create_medication_request(connection: Any, data: dict[str, Any]) -> Any:
+def create_medication_request(session: Any, data: dict[str, Any]) -> int:
     if data.get("status") != "unknown" or data.get("intent") != "order":
         raise ApiError(
             422,
@@ -177,10 +198,8 @@ def create_medication_request(connection: Any, data: dict[str, Any]) -> Any:
             "Provide an order with unknown status for the prescription record.",
         )
     record_id = reference(data.get("encounter"), "Encounter")
-    owner = connection.scalar(
-        select(medical_record.c.patient_id).where(
-            medical_record.c.record_id == record_id
-        )
+    owner = session.scalar(
+        select(MedicalRecord.patient_id).where(MedicalRecord.record_id == record_id)
     )
     if owner is None:
         raise ApiError(422, "not-found", "The referenced Encounter is unavailable.")
@@ -195,18 +214,17 @@ def create_medication_request(connection: Any, data: dict[str, Any]) -> Any:
             "dosageInstruction",
             maximum=4000,
         )
-    return connection.scalar(
-        prescription.insert()
-        .values(
-            record_id=record_id,
-            medication=medication,
-            instructions=instructions,
-        )
-        .returning(prescription.c.prescription_id)
+    rx = Prescription(
+        record_id=record_id,
+        medication=medication,
+        instructions=instructions,
     )
+    session.add(rx)
+    session.flush()
+    return rx.prescription_id
 
 
-def create_care_plan(connection: Any, data: dict[str, Any]) -> Any:
+def create_care_plan(session: Any, data: dict[str, Any]) -> int:
     status = data.get("status")
     if (
         not isinstance(status, str)
@@ -219,14 +237,9 @@ def create_care_plan(connection: Any, data: dict[str, Any]) -> Any:
             "Provide an active, completed or revoked CarePlan with intent plan.",
         )
     owner = reference(data.get("subject"), "Patient")
-    if (
-        connection.scalar(
-            select(patient.c.patient_id).where(patient.c.patient_id == owner)
-        )
-        is None
-    ):
+    if session.get(Patient, owner) is None:
         raise ApiError(422, "not-found", "The referenced Patient is unavailable.")
-    practitioner = clinician_id(connection)
+    practitioner = clinician_id(session)
     if "author" in data and reference(data["author"], "Practitioner") != practitioner:
         raise ApiError(
             403, "forbidden", "The CarePlan author must match the signed-in account."
@@ -238,24 +251,23 @@ def create_care_plan(connection: Any, data: dict[str, Any]) -> Any:
         raise ApiError(
             422, "value", "The CarePlan end date must be on or after its start."
         )
-    return connection.scalar(
-        treatment_plan.insert()
-        .values(
-            patient_id=owner,
-            staff_id=practitioner,
-            status=CARE_PLAN_STATUS[status],
-            title=as_text(data.get("title"), "title", maximum=150),
-            goal=as_text(
-                data.get("description"), "description", maximum=4000, optional=True
-            ),
-            start_date=start,
-            end_date=end,
-        )
-        .returning(treatment_plan.c.plan_id)
+    plan = TreatmentPlan(
+        patient_id=owner,
+        staff_id=practitioner,
+        status=CARE_PLAN_STATUS[status],
+        title=as_text(data.get("title"), "title", maximum=150),
+        goal=as_text(
+            data.get("description"), "description", maximum=4000, optional=True
+        ),
+        start_date=start,
+        end_date=end,
     )
+    session.add(plan)
+    session.flush()
+    return plan.plan_id
 
 
-def create_procedure(connection: Any, data: dict[str, Any]) -> Any:
+def create_procedure(session: Any, data: dict[str, Any]) -> int:
     if (
         data.get("status") != "completed"
         or field(data, "code").get("text") != "Rehabilitation session"
@@ -264,8 +276,8 @@ def create_procedure(connection: Any, data: dict[str, Any]) -> Any:
             422, "value", "Provide a completed rehabilitation session Procedure."
         )
     plan_id = reference(only(data, "basedOn"), "CarePlan")
-    owner = connection.scalar(
-        select(treatment_plan.c.patient_id).where(treatment_plan.c.plan_id == plan_id)
+    owner = session.scalar(
+        select(TreatmentPlan.patient_id).where(TreatmentPlan.plan_id == plan_id)
     )
     if owner is None:
         raise ApiError(422, "not-found", "The referenced CarePlan is unavailable.")
@@ -275,42 +287,42 @@ def create_procedure(connection: Any, data: dict[str, Any]) -> Any:
         if "note" in data
         else None
     )
-    return connection.scalar(
-        rehab_session.insert()
-        .values(
-            plan_id=plan_id,
-            session_date=as_date(data.get("performedDateTime"), "performedDateTime"),
-            notes=notes,
-        )
-        .returning(rehab_session.c.session_id)
+    rehab = RehabSession(
+        plan_id=plan_id,
+        session_date=as_date(data.get("performedDateTime"), "performedDateTime"),
+        notes=notes,
     )
+    session.add(rehab)
+    session.flush()
+    return rehab.session_id
 
 
-def create_observation(connection: Any, data: dict[str, Any]) -> str:
+def create_observation(session: Any, data: dict[str, Any]) -> str:
     label = field(data, "code").get("text")
     if data.get("status") != "final" or label not in REHAB_METRICS.values():
         raise ApiError(
             422, "value", "Provide a final pain score or range-of-motion Observation."
         )
     session_id = reference(only(data, "partOf"), "Procedure")
-    session = (
-        connection.execute(
+    rehab = (
+        session.execute(
             select(
-                treatment_plan.c.patient_id,
-                rehab_session.c.session_date,
+                TreatmentPlan.patient_id,
+                RehabSession.session_date,
             )
-            .select_from(rehab_session.join(treatment_plan))
-            .where(rehab_session.c.session_id == session_id)
+            .select_from(RehabSession)
+            .join(TreatmentPlan, RehabSession.plan_id == TreatmentPlan.plan_id)
+            .where(RehabSession.session_id == session_id)
         )
         .mappings()
         .one_or_none()
     )
-    if session is None:
+    if rehab is None:
         raise ApiError(422, "not-found", "The referenced Procedure is unavailable.")
-    require_subject(data, session["patient_id"])
+    require_subject(data, rehab["patient_id"])
     if "effectiveDateTime" in data:
         effective = as_date(data["effectiveDateTime"], "effectiveDateTime")
-        if effective != session["session_date"]:
+        if effective != rehab["session_date"]:
             raise ApiError(
                 422,
                 "value",
@@ -320,6 +332,7 @@ def create_observation(connection: Any, data: dict[str, Any]) -> str:
     quantity = field(data, "valueQuantity")
     value = quantity.get("value")
     column: Any
+    field_name: str
     if label == REHAB_METRICS["pain"]:
         if (
             type(value) is not int
@@ -329,7 +342,7 @@ def create_observation(connection: Any, data: dict[str, Any]) -> str:
             raise ApiError(
                 422, "value", "Pain score must be a whole number from 0 to 10."
             )
-        metric, column = "pain", rehab_session.c.pain_score
+        metric, column, field_name = "pain", RehabSession.pain_score, "pain_score"
     else:
         value = as_money(value, "valueQuantity.value")
         if (
@@ -340,17 +353,21 @@ def create_observation(connection: Any, data: dict[str, Any]) -> str:
             raise ApiError(
                 422, "value", "Range of motion must be in degrees, from 0 to 9999.99."
             )
-        metric, column = "rom", rehab_session.c.range_of_motion
-    updated = connection.scalar(
-        rehab_session.update()
-        .where(rehab_session.c.session_id == session_id, column.is_(None))
-        .values({column: value})
-        .returning(rehab_session.c.session_id)
+        metric, column, field_name = (
+            "rom",
+            RehabSession.range_of_motion,
+            "range_of_motion",
+        )
+    updated = session.execute(
+        update(RehabSession)
+        .where(RehabSession.session_id == session_id, column.is_(None))
+        .values({field_name: value})
     )
-    if updated is None:
+    if updated.rowcount == 0:
         raise ApiError(
             409, "duplicate", "This measurement was already recorded for the session."
         )
+    session.flush()
     return f"{session_id}-{metric}"
 
 
