@@ -40,13 +40,14 @@ def test_schema_and_append_only_audit(app, client, tokens):
         client.get("/api/v1/fhir/Encounter", headers=tokens["staff"]).status_code == 200
     )
     engine = app.extensions["ortho_db"]
+    assert len(metadata.tables) == 17
     assert set(inspect(engine).get_table_names()) == {
         *metadata.tables,
         "alembic_version",
     }
     with engine.connect() as connection:
         seed_count = connection.scalar(text("SELECT COUNT(*) FROM patient"))
-        assert seed_count == 2
+        assert seed_count == 3
         assert connection.scalar(
             select(audit_log.c.action).where(audit_log.c.action == "read").limit(1)
         )
@@ -107,7 +108,7 @@ def test_payment_decline_partial_replay_and_full(client, tokens, people):
     ) == (
         201,
         "partial",
-        "325.00",
+        "175.00",
     )
     repeat = payment_for(client, tokens["patient"], invoice_id, "125.00", "approved")
     assert repeat.status_code == 200 and repeat.json["payment"] == first.json["payment"]
@@ -117,9 +118,9 @@ def test_payment_decline_partial_replay_and_full(client, tokens, people):
         client, tokens["patient"], invoice_id, "0.001", "three-decimals"
     )
     assert invalid.status_code == 422
-    overpayment = payment_for(client, tokens["patient"], invoice_id, "325.01", "over")
+    overpayment = payment_for(client, tokens["patient"], invoice_id, "175.01", "over")
     assert overpayment.status_code == 409
-    last = payment_for(client, tokens["patient"], invoice_id, "325.00", "final")
+    last = payment_for(client, tokens["patient"], invoice_id, "175.00", "final")
     assert (
         last.status_code,
         last.json["invoice"]["status"],
@@ -145,14 +146,14 @@ def test_two_simultaneous_payments_cannot_overpay(app, client, tokens, people):
         with app.test_client() as worker:
             barrier.wait()
             return payment_for(
-                worker, tokens["patient"], invoice_id, "300.00", f"race-{index}"
+                worker, tokens["patient"], invoice_id, "200.00", f"race-{index}"
             )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(submit, range(2)))
     assert sorted(result.status_code for result in results) == [201, 409]
     read = client.get(f"/api/v1/invoices/{invoice_id}", headers=tokens["patient"]).json
-    assert read["balance"] == "150.00" and len(read["payments"]) == 1
+    assert read["balance"] == "100.00" and len(read["payments"]) == 1
 
 
 def test_invoice_ownership_and_role_matrix(client, tokens, people):
@@ -189,7 +190,7 @@ def test_reports_match_seeded_historical_payments_and_visits(client, tokens):
     )
     assert financial.status_code == 200
     assert Decimal(financial.json["totals"]["revenue"]) == Decimal("150.00")
-    assert Decimal(financial.json["totals"]["outstanding"]) == Decimal("750.00")
+    assert Decimal(financial.json["totals"]["outstanding"]) == Decimal("650.00")
     assert financial.json["totals"]["open_invoices"] == 2
     stats = client.get(
         f"/api/v1/reports/patients{filters}", headers=tokens["staff"]
@@ -218,10 +219,12 @@ def test_reports_match_seeded_historical_payments_and_visits(client, tokens):
 
 
 def test_icd10_search_and_invalid_invoice_code(client, tokens, people):
-    result = client.get("/api/v1/icd10?q=m25", headers=tokens["staff"])
+    result = client.get("/api/v1/icd10?q=M17", headers=tokens["staff"])
     assert result.status_code == 200
-    assert "M25.5" in {item["code"] for item in result.json["items"]}
-    assert client.get("/api/v1/icd10", headers=tokens["patient"]).status_code == 403
+    assert "M17.9" in {item["code"] for item in result.json["items"]}
+    assert (
+        client.get("/api/v1/icd10?q=M17", headers=tokens["patient"]).status_code == 403
+    )
     result = client.post(
         "/api/v1/invoices",
         headers=tokens["staff"],

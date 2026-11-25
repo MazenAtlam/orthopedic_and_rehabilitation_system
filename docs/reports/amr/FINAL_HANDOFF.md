@@ -67,6 +67,7 @@ Use `pg_dump --format=custom` for PostgreSQL and maintain a corresponding Orthan
 
 - [WHO catalog import](../../../database/seed/README.md)
 - [Phase 2 progress report](Team%2003%20-%20Amr%20Fekry%20-%20Phase%202%20Progress%20Report.pdf)
+- [Phase 2 feature status and frontend review](PHASE_2_PROGRESS.md)
 - [Phase 3 progress report](Team%2003%20-%20Amr%20Fekry%20-%20Phase%203%20Progress%20Report.pdf)
 - [Final project and discussion guide](Team%2003%20-%20Amr%20Fekry%20-%20Final%20Project%20and%20Discussion%20Guide%20EN.pdf)
 - [Final presentation](Team%2003%20-%20Amr%20Fekry%20-%20Final%20Presentation.pptx)

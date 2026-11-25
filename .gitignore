@@ -17,6 +17,7 @@ htmlcov/
 # Node
 node_modules/
 /emr-client/.vite/
+/frontend/.vite/
 dist/
 build/
 npm-debug.log*

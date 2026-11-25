@@ -9,7 +9,7 @@ else
   echo "[entrypoint] alembic.ini not found yet - skipping migrations."
 fi
 
-if [ "$SEED_ON_START" = "true" ] && [ -s scripts/seed.py ]; then
+if [ "${SEED_ON_START:-}" = "true" ] && [ "${DEMO_MODE:-}" = "1" ] && [ "${APP_ENV:-development}" != "production" ]; then
   echo "[entrypoint] Loading demo data (python -m scripts.seed)..."
   python -m scripts.seed
 fi

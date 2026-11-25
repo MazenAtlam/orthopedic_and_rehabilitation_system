@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
@@ -198,6 +199,22 @@ def invoice_read(invoice_id: int) -> dict[str, Any]:
         return invoice_details(connection, invoice_id)
 
 
+def calculate_invoice_total(
+    prices: Mapping[int, Decimal], quantities: Mapping[int, int]
+) -> Decimal:
+    if not quantities:
+        raise ApiError(422, "value", "Provide at least one invoice item.")
+    total = sum(
+        (prices[key] * quantity for key, quantity in quantities.items()),
+        Decimal("0.00"),
+    )
+    if total > MAX_MONEY:
+        raise ApiError(
+            422, "value", "Invoice total exceeds the maximum allowed amount."
+        )
+    return total
+
+
 @billing.post("/invoices")
 @require_roles("admin", "staff")
 def invoice_create() -> tuple[dict[str, Any], int]:
@@ -266,14 +283,7 @@ def invoice_create() -> tuple[dict[str, Any], int]:
             raise ApiError(
                 422, "value", "Each invoice item must refer to an active service."
             )
-        total = sum(
-            (prices[key] * quantity for key, quantity in quantities.items()),
-            Decimal("0.00"),
-        )
-        if total > MAX_MONEY:
-            raise ApiError(
-                422, "value", "Invoice total exceeds the maximum allowed amount."
-            )
+        total = calculate_invoice_total(prices, quantities)
         invoice_id = int(
             connection.scalar(
                 invoice.insert()

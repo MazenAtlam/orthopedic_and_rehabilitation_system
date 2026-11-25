@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import Range
 
 from app.fhir.resources import APPOINTMENT_TYPES, ICD10_SYSTEM, REHAB_METRICS
 from app.models.schema_v1 import (
@@ -90,12 +91,18 @@ def appointment_participants(data: dict[str, Any]) -> dict[str, int]:
     return actors
 
 
+def appointment_slot(start: datetime, end: datetime) -> Range[datetime]:
+    if end <= start:
+        raise ApiError(422, "value", "Appointment end must be after start.")
+    return Range(start, end, bounds="[)")
+
+
 def create_appointment(connection: Any, data: dict[str, Any]) -> Any:
     if data.get("status") != "booked":
         raise ApiError(422, "value", "Provide a booked FHIR Appointment resource.")
-    start, end = instant(data.get("start"), "start"), instant(data.get("end"), "end")
-    if end <= start:
-        raise ApiError(422, "value", "Appointment end must be after start.")
+    slot = appointment_slot(
+        instant(data.get("start"), "start"), instant(data.get("end"), "end")
+    )
     actors = appointment_participants(data)
     selected = data.get("appointmentType", {"text": "consultation"})
     if not isinstance(selected, dict) or selected.get("text") not in APPOINTMENT_TYPES:
@@ -114,8 +121,8 @@ def create_appointment(connection: Any, data: dict[str, Any]) -> Any:
             patient_id=actors["Patient"],
             staff_id=actors["Practitioner"],
             type=selected["text"],
-            start_time=start,
-            end_time=end,
+            start_time=slot.lower,
+            end_time=slot.upper,
             status="booked",
             notes=as_text(data.get("comment"), "comment", maximum=4000, optional=True),
         )

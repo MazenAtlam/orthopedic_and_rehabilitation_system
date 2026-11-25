@@ -58,6 +58,7 @@ def create_app(
     secret: str | None = None,
     demo: bool | None = None,
 ) -> HealthcareApp:
+    app_env = os.environ.get("APP_ENV", Config.APP_ENV)
     url = normalize_database_url(database_url or os.environ.get("DATABASE_URL", ""))
     secret = secret or os.environ.get("JWT_SECRET_KEY", Config.JWT_SECRET_KEY)
     if not url.startswith("postgresql+psycopg://"):
@@ -65,18 +66,20 @@ def create_app(
     if (
         not secret
         or secret.startswith("replace-with-")
-        or (os.environ.get("APP_ENV") == "production" and len(secret.encode()) < 32)
+        or (app_env == "production" and len(secret.encode()) < 32)
     ):
         raise RuntimeError("Set JWT_SECRET_KEY to a unique value of at least 32 bytes.")
 
     app = HealthcareApp(__name__, static_folder=None)
     app.config.from_object(Config)
     app.config.update(
+        APP_ENV=app_env,
         DATABASE_URL=url,
         JWT_SECRET_KEY=secret,
         JWT_TOKEN_LOCATION=["headers"],
         MAX_CONTENT_LENGTH=1_048_576,
-        DEMO_MODE=demo if demo is not None else os.environ.get("DEMO_MODE") == "1",
+        DEMO_MODE=app_env != "production"
+        and (demo if demo is not None else os.environ.get("DEMO_MODE") == "1"),
     )
     CORS(app, origins=app.config["CORS_ORIGINS"])
     app.extensions["ortho_db"] = create_engine(

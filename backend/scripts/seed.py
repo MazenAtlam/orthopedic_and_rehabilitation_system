@@ -2,7 +2,6 @@
 
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
-from secrets import token_urlsafe
 from typing import Any
 
 import bcrypt
@@ -41,21 +40,28 @@ ICD10_SAMPLE = (
     ("M54.5", "Low back pain", "Musculoskeletal"),
     ("S52.5", "Fracture of lower end of radius", "Injury"),
 )
-ADMIN = "admin@ortho.example"
-STAFF = "staff@ortho.example"
-PATIENT = "patient@ortho.example"
-OTHER = "patient2@ortho.example"
-
-DEMO_STUDY_UID = "2.25.213338814091244823214794205785473106551"
+ADMIN = "admin@hcis.test"
+STAFF = "doctor1@hcis.test"
+PHYSIO = "physio1@hcis.test"
+PATIENT = "patient1@hcis.test"
+OTHER = "patient2@hcis.test"
+THIRD = "patient3@hcis.test"
+DEMO_PASSWORD = "Test@12345"
+DEMO_ACCOUNTS = {
+    ADMIN: "admin",
+    STAFF: "staff",
+    PHYSIO: "staff",
+    PATIENT: "patient",
+    OTHER: "patient",
+    THIRD: "patient",
+}
+DEMO_STUDY_UID = "2.25.213338814091244823214794205785473106552"
 
 
 def install_command(app: Any) -> None:
     @app.cli.command("seed-demo")
     def seed_command() -> None:
-        if not current_app.config["DEMO_MODE"]:
-            raise click.ClickException("Set DEMO_MODE=1 to load fictional examples.")
-        created = seed(db())
-        click.echo("Loaded demo data." if created else "Demo data already loaded.")
+        load_demo()
 
 
 def insert_one(connection: Any, table: Any, **values: Any) -> Any:
@@ -145,6 +151,11 @@ def seed_imaging_example(connection: Any) -> bool:
 
 
 def seed(engine: Any) -> bool:
+    if (
+        not current_app.config["DEMO_MODE"]
+        or current_app.config["APP_ENV"] == "production"
+    ):
+        raise click.ClickException("Seed requires a non-production DEMO_MODE=1 app.")
     with engine.begin() as connection:
         connection.execute(select(func.pg_advisory_xact_lock(320002)))
         connection.execute(
@@ -157,37 +168,51 @@ def seed(engine: Any) -> bool:
             )
             .on_conflict_do_nothing(index_elements=[icd10_code.c.code])
         )
-        if connection.scalar(select(user.c.user_id).where(user.c.email == ADMIN)):
-            return seed_imaging_example(connection)
-
-        hashed = bcrypt.hashpw(token_urlsafe(32).encode(), bcrypt.gensalt()).decode()
-        staff_account = None
-        patients = []
-        for email, role in (
-            (ADMIN, "admin"),
-            (STAFF, "staff"),
-            (PATIENT, "patient"),
-            (OTHER, "patient"),
-        ):
-            account = insert_one(
-                connection, user, email=email, role=role, password_hash=hashed
+        accounts = dict(
+            connection.execute(
+                select(user.c.email, user.c.role).where(user.c.email.in_(DEMO_ACCOUNTS))
             )
-            if role == "staff":
-                staff_account = account
-            elif role == "patient":
-                patients.append(account)
+            .tuples()
+            .all()
+        )
+        if accounts == DEMO_ACCOUNTS:
+            return seed_imaging_example(connection)
+        if accounts:
+            raise click.ClickException(
+                "Some demo emails already exist. Use a separate, fresh demo database."
+            )
+        ids = {
+            email: insert_one(
+                connection,
+                user,
+                email=email,
+                role=role,
+                password_hash=bcrypt.hashpw(
+                    DEMO_PASSWORD.encode(), bcrypt.gensalt()
+                ).decode(),
+            )
+            for email, role in DEMO_ACCOUNTS.items()
+        }
         clinician = insert_one(
             connection,
             staff,
-            user_id=staff_account,
+            user_id=ids[STAFF],
             full_name="Demo Clinician",
             specialty="Orthopedics",
             staff_type="doctor",
         )
+        insert_one(
+            connection,
+            staff,
+            user_id=ids[PHYSIO],
+            full_name="Demo Physiotherapist",
+            specialty="Rehabilitation",
+            staff_type="physiotherapist",
+        )
         first = insert_one(
             connection,
             patient,
-            user_id=patients[0],
+            user_id=ids[PATIENT],
             full_name="Nour Example",
             birth_date=date(1993, 3, 12),
             gender="female",
@@ -195,14 +220,22 @@ def seed(engine: Any) -> bool:
         second = insert_one(
             connection,
             patient,
-            user_id=patients[1],
+            user_id=ids[OTHER],
             full_name="Karim Example",
             birth_date=date(1988, 6, 8),
             gender="male",
         )
+        insert_one(
+            connection,
+            patient,
+            user_id=ids[THIRD],
+            full_name="Salma Example",
+            birth_date=date(1996, 7, 15),
+            gender="female",
+        )
         today = utcnow().date()
-        service_ids = [
-            insert_one(
+        service_ids = {
+            name: insert_one(
                 connection,
                 service,
                 name=name,
@@ -210,11 +243,11 @@ def seed(engine: Any) -> bool:
                 price=Decimal(price),
             )
             for name, summary, price in (
-                ("Orthopedic consultation", "Outpatient assessment", "450.00"),
-                ("Rehabilitation session", "Guided physiotherapy", "275.00"),
-                ("Follow-up visit", "Review and follow-up", "325.00"),
+                ("Consultation", "Outpatient assessment", "300.00"),
+                ("Physio session", "Guided physiotherapy", "250.00"),
+                ("X-ray imaging", "Orthopedic imaging", "400.00"),
             )
-        ]
+        }
 
         for index, patient_id in enumerate((first, second)):
             visit = today - timedelta(days=9 - 4 * index)
@@ -230,7 +263,7 @@ def seed(engine: Any) -> bool:
                 status="completed",
             )
             next_start = datetime.combine(
-                today + timedelta(days=index), time(15), timezone.utc
+                today + timedelta(days=1 + index), time(10), timezone.utc
             )
             insert_one(
                 connection,
@@ -278,6 +311,11 @@ def seed(engine: Any) -> bool:
                 pain_score=3,
                 range_of_motion=Decimal("105.00"),
             )
+            service_name, price, quantity = (
+                ("Consultation", Decimal("300.00"), 1)
+                if index
+                else ("Physio session", Decimal("250.00"), 2)
+            )
             bill = insert_one(
                 connection,
                 invoice,
@@ -286,16 +324,16 @@ def seed(engine: Any) -> bool:
                 icd10_code=code,
                 issue_date=visit,
                 due_date=today + timedelta(days=14),
-                total_amount=Decimal("450.00"),
+                total_amount=price * quantity,
                 status="partial" if index else "unpaid",
             )
             insert_one(
                 connection,
                 invoice_item,
                 invoice_id=bill,
-                service_id=service_ids[0],
-                quantity=1,
-                unit_price=Decimal("450.00"),
+                service_id=service_ids[service_name],
+                quantity=quantity,
+                unit_price=price,
             )
             if index:
                 insert_one(
@@ -311,13 +349,21 @@ def seed(engine: Any) -> bool:
     return True
 
 
+def load_demo() -> None:
+    created = seed(db())
+    click.echo("Loaded demo data." if created else "Demo data already loaded.")
+
+
 def main() -> None:
     from app import create_app
 
-    app = create_app(demo=True)
+    app = create_app()
     with app.app_context():
-        created = seed(db())
-    print("Loaded demo data." if created else "Demo data already loaded.")
+        try:
+            load_demo()
+        except click.ClickException as error:
+            error.show()
+            raise SystemExit(error.exit_code) from None
 
 
 if __name__ == "__main__":
