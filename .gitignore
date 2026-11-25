@@ -16,9 +16,14 @@ htmlcov/
 
 # Node
 node_modules/
+/emr-client/.vite/
 dist/
 build/
 npm-debug.log*
+
+# Locally obtained terminology data
+/database/seed/icd10_codes.csv
+/database/seed/icd102019enMeta.zip
 
 # AI models and medical data (never commit patient or large data)
 *.pt

@@ -21,6 +21,8 @@ Course project: Healthcare Information System (HCIS), Team 03, Faculty of Engine
 9. [Testing and code style](#testing-and-code-style)
 10. [Team](#team)
 
+[Amr Fekry’s EMR, ICD-10, and imaging integration handoff](docs/reports/amr/FINAL_HANDOFF.md)
+
 ## Project status
 
 | Phase | Content | Status |
