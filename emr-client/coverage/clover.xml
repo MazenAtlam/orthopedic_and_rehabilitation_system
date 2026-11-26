@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<coverage generated="1795653581565" clover="3.2.0">
+  <project timestamp="1795653581566" name="All files">
+    <metrics statements="126" coveredstatements="117" conditionals="125" coveredconditionals="74" methods="54" coveredmethods="46" elements="305" coveredelements="237" complexity="0" loc="126" ncloc="126" packages="4" files="4" classes="4"/>
+    <package name="src">
+      <metrics statements="34" coveredstatements="32" conditionals="15" coveredconditionals="10" methods="12" coveredmethods="10"/>
+      <file name="App.jsx" path="/app/src/App.jsx">
+        <metrics statements="34" coveredstatements="32" conditionals="15" coveredconditionals="10" methods="12" coveredmethods="10"/>
+        <line num="7" count="35" type="stmt"/>
+        <line num="8" count="35" type="stmt"/>
+        <line num="9" count="35" type="stmt"/>
+        <line num="12" count="2" type="stmt"/>
+        <line num="13" count="2" type="cond" truecount="0" falsecount="1"/>
+        <line num="14" count="2" type="stmt"/>
+        <line num="15" count="2" type="stmt"/>
+        <line num="16" count="2" type="stmt"/>
+        <line num="19" count="35" type="stmt"/>
+        <line num="20" count="1" type="stmt"/>
+        <line num="21" count="1" type="stmt"/>
+        <line num="24" count="35" type="stmt"/>
+        <line num="32" count="1" type="stmt"/>
+        <line num="52" count="29" type="stmt"/>
+        <line num="63" count="3" type="stmt"/>
+        <line num="65" count="3" type="stmt"/>
+        <line num="66" count="2" type="stmt"/>
+        <line num="68" count="2" type="stmt"/>
+        <line num="69" count="2" type="stmt"/>
+        <line num="72" count="2" type="cond" truecount="1" falsecount="0"/>
+        <line num="73" count="1" type="stmt"/>
+        <line num="76" count="1" type="cond" truecount="1" falsecount="0"/>
+        <line num="77" count="1" type="stmt"/>
+        <line num="78" count="0" type="stmt"/>
+        <line num="80" count="1" type="stmt"/>
+        <line num="83" count="1" type="cond" truecount="0" falsecount="1"/>
+        <line num="84" count="1" type="cond" truecount="1" falsecount="1"/>
+        <line num="85" count="0" type="stmt"/>
+        <line num="88" count="2" type="stmt"/>
+        <line num="89" count="2" type="stmt"/>
+        <line num="92" count="3" type="cond" truecount="1" falsecount="0"/>
+        <line num="93" count="1" type="cond" truecount="0" falsecount="1"/>
+        <line num="94" count="1" type="cond" truecount="0" falsecount="1"/>
+        <line num="95" count="1" type="stmt"/>
+      </file>
+    </package>
+    <package name="src.components">
+      <metrics statements="65" coveredstatements="59" conditionals="88" coveredconditionals="47" methods="37" coveredmethods="32"/>
+      <file name="PatientRecords.jsx" path="/app/src/components/PatientRecords.jsx">
+        <metrics statements="65" coveredstatements="59" conditionals="88" coveredconditionals="47" methods="37" coveredmethods="32"/>
+        <line num="4" count="1" type="stmt"/>
+        <line num="13" count="5" type="stmt"/>
+        <line num="14" count="5" type="stmt"/>
+        <line num="22" count="5" type="stmt"/>
+        <line num="23" count="5" type="stmt"/>
+        <line num="24" count="5" type="stmt"/>
+        <line num="25" count="5" type="stmt"/>
+        <line num="26" count="25" type="cond" truecount="1" falsecount="1"/>
+        <line num="28" count="5" type="cond" truecount="1" falsecount="1"/>
+        <line num="30" count="5" type="stmt"/>
+        <line num="43" count="0" type="stmt"/>
+        <line num="45" count="0" type="stmt"/>
+        <line num="57" count="25" type="stmt"/>
+        <line num="61" count="4" type="stmt"/>
+        <line num="83" count="10" type="stmt"/>
+        <line num="84" count="10" type="stmt"/>
+        <line num="85" count="5" type="stmt"/>
+        <line num="86" count="5" type="stmt"/>
+        <line num="88" count="9" type="stmt"/>
+        <line num="92" count="5" type="cond" truecount="1" falsecount="0"/>
+        <line num="95" count="0" type="cond" truecount="0" falsecount="1"/>
+        <line num="96" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="97" count="0" type="stmt"/>
+        <line num="99" count="5" type="stmt"/>
+        <line num="102" count="10" type="cond" truecount="1" falsecount="0"/>
+        <line num="103" count="5" type="cond" truecount="0" falsecount="1"/>
+        <line num="104" count="5" type="stmt"/>
+        <line num="105" count="5" type="cond" truecount="1" falsecount="0"/>
+        <line num="106" count="4" type="cond" truecount="1" falsecount="0"/>
+        <line num="107" count="3" type="cond" truecount="1" falsecount="0"/>
+        <line num="108" count="2" type="cond" truecount="1" falsecount="0"/>
+        <line num="109" count="1" type="stmt"/>
+        <line num="113" count="7" type="stmt"/>
+        <line num="119" count="26" type="stmt"/>
+        <line num="132" count="2" type="cond" truecount="1" falsecount="1"/>
+        <line num="136" count="0" type="stmt"/>
+        <line num="140" count="2" type="cond" truecount="1" falsecount="1"/>
+        <line num="144" count="1" type="cond" truecount="1" falsecount="1"/>
+        <line num="147" count="1" type="stmt"/>
+        <line num="163" count="1" type="stmt"/>
+        <line num="164" count="1" type="cond" truecount="1" falsecount="1"/>
+        <line num="167" count="1" type="stmt"/>
+        <line num="168" count="1" type="stmt"/>
+        <line num="184" count="1" type="cond" truecount="1" falsecount="1"/>
+        <line num="187" count="1" type="stmt"/>
+        <line num="200" count="1" type="stmt"/>
+        <line num="201" count="1" type="stmt"/>
+        <line num="202" count="2" type="stmt"/>
+        <line num="203" count="2" type="stmt"/>
+        <line num="204" count="2" type="cond" truecount="3" falsecount="0"/>
+        <line num="205" count="2" type="cond" truecount="2" falsecount="0"/>
+        <line num="206" count="2" type="stmt"/>
+        <line num="207" count="2" type="stmt"/>
+        <line num="210" count="1" type="stmt"/>
+        <line num="216" count="1" type="stmt"/>
+        <line num="233" count="1" type="stmt"/>
+        <line num="235" count="1" type="cond" truecount="1" falsecount="1"/>
+        <line num="247" count="1" type="stmt"/>
+        <line num="250" count="1" type="stmt"/>
+        <line num="256" count="1" type="stmt"/>
+        <line num="257" count="1" type="stmt"/>
+        <line num="259" count="1" type="stmt"/>
+        <line num="264" count="1" type="cond" truecount="1" falsecount="1"/>
+        <line num="277" count="1" type="stmt"/>
+        <line num="278" count="1" type="cond" truecount="1" falsecount="1"/>
+      </file>
+    </package>
+    <package name="src.services">
+      <metrics statements="27" coveredstatements="26" conditionals="22" coveredconditionals="17" methods="5" coveredmethods="4"/>
+      <file name="fhir.mjs" path="/app/src/services/fhir.mjs">
+        <metrics statements="27" coveredstatements="26" conditionals="22" coveredconditionals="17" methods="5" coveredmethods="4"/>
+        <line num="1" count="2" type="cond" truecount="2" falsecount="0"/>
+        <line num="4" count="20" type="stmt"/>
+        <line num="5" count="20" type="stmt"/>
+        <line num="10" count="20" type="stmt"/>
+        <line num="11" count="20" type="cond" truecount="2" falsecount="0"/>
+        <line num="12" count="4" type="stmt"/>
+        <line num="17" count="16" type="cond" truecount="1" falsecount="1"/>
+        <line num="18" count="16" type="stmt"/>
+        <line num="22" count="16" type="stmt"/>
+        <line num="23" count="16" type="stmt"/>
+        <line num="24" count="16" type="stmt"/>
+        <line num="25" count="16" type="stmt"/>
+        <line num="26" count="16" type="stmt"/>
+        <line num="27" count="16" type="stmt"/>
+        <line num="28" count="21" type="stmt"/>
+        <line num="29" count="21" type="cond" truecount="5" falsecount="0"/>
+        <line num="30" count="3" type="stmt"/>
+        <line num="32" count="18" type="stmt"/>
+        <line num="33" count="16" type="cond" truecount="2" falsecount="0"/>
+        <line num="34" count="1" type="stmt"/>
+        <line num="37" count="17" type="stmt"/>
+        <line num="38" count="17" type="stmt"/>
+        <line num="39" count="16" type="cond" truecount="3" falsecount="1"/>
+        <line num="40" count="0" type="stmt"/>
+        <line num="42" count="16" type="cond" truecount="1" falsecount="1"/>
+        <line num="43" count="16" type="stmt"/>
+        <line num="45" count="11" type="stmt"/>
+      </file>
+    </package>
+    <package name="tests">
+      <metrics statements="0" coveredstatements="0" conditionals="0" coveredconditionals="0" methods="0" coveredmethods="0"/>
+      <file name="style-mock.mjs" path="/app/tests/style-mock.mjs">
+        <metrics statements="0" coveredstatements="0" conditionals="0" coveredconditionals="0" methods="0" coveredmethods="0"/>
+      </file>
+    </package>
+  </project>
+</coverage>

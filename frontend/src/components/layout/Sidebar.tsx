@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Activity,
   BarChart3,
@@ -11,6 +11,8 @@ import {
   Users,
   LogOut,
 } from 'lucide-react';
+import { queryClient } from '../../api/queryClient';
+import { authApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
 import type { UserRole } from '../../types';
 
@@ -68,7 +70,20 @@ const NAV_ITEMS: NavItem[] = [
 
 export const Sidebar: React.FC = () => {
   const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
   const visibleItems = NAV_ITEMS.filter((item) => (user ? item.roles.includes(user.role) : false));
+
+  const handleSignOut = async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      // Clear local session even if token has already expired
+    } finally {
+      queryClient.clear();
+      logout();
+      navigate('/login', { replace: true });
+    }
+  };
 
   return (
     <aside className="w-64 bg-slate-900 text-slate-200 flex flex-col min-h-screen shrink-0">
@@ -103,7 +118,8 @@ export const Sidebar: React.FC = () => {
 
       <div className="p-4 border-t border-slate-800">
         <button
-          onClick={logout}
+          type="button"
+          onClick={handleSignOut}
           className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
         >
           <LogOut className="w-4 h-4" />

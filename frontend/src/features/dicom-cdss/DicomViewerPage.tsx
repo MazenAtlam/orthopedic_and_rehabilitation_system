@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   ZoomIn,
   Move,
@@ -15,14 +16,20 @@ import {
   Save,
   Contrast,
 } from 'lucide-react';
-import { useDicomToolStore, ViewerTool, ViewLayout, ImageFilter } from '../../store/dicomToolStore';
+import { fhirApi } from '../../api/endpoints';
 import { usePermissions } from '../../hooks/usePermissions';
+import {
+  useDicomToolStore,
+  type ViewerTool,
+  type ViewLayout,
+  type ImageFilter,
+} from '../../store/dicomToolStore';
 
 const WW_WL_PRESETS = [
-  { name: 'Lung', ww: 1500, wl: -600 },
-  { name: 'Soft Tissue', ww: 400, wl: 40 },
   { name: 'Bone', ww: 2000, wl: 300 },
-  { name: 'Brain', ww: 80, wl: 40 },
+  { name: 'Joint / Soft', ww: 400, wl: 40 },
+  { name: 'Spine', ww: 1800, wl: 250 },
+  { name: 'Cartilage', ww: 600, wl: 80 },
 ];
 
 export const DicomViewerPage: React.FC = () => {
@@ -32,7 +39,32 @@ export const DicomViewerPage: React.FC = () => {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [savedNotice, setSavedNotice] = useState(false);
 
-  // Compute CSS visual approximation of WW/WL & filters for live preview
+  const studiesQuery = useQuery({
+    queryKey: ['fhir', 'ImagingStudy'],
+    queryFn: async () => (await fhirApi.searchResource('ImagingStudy')).data,
+  });
+
+  const reportsQuery = useQuery({
+    queryKey: ['fhir', 'DiagnosticReport'],
+    queryFn: async () => (await fhirApi.searchResource('DiagnosticReport')).data,
+  });
+
+  const firstStudy = studiesQuery.data?.entry?.[0]?.resource as
+    | {
+        id?: string;
+        subject?: { reference?: string };
+        started?: string;
+        identifier?: { value?: string }[];
+      }
+    | undefined;
+
+  const firstReport = reportsQuery.data?.entry?.[0]?.resource as
+    | {
+        status?: string;
+        conclusion?: string;
+      }
+    | undefined;
+
   const contrastPct = Math.max(40, Math.min(240, Math.round((2000 / store.windowWidth) * 100)));
   const brightnessPct = Math.max(40, Math.min(180, Math.round(100 + store.windowLevel / 15)));
   const filterCss = [
@@ -94,7 +126,6 @@ export const DicomViewerPage: React.FC = () => {
     setTimeout(() => setSavedNotice(false), 3000);
   };
 
-  // Simulated anatomical SVG slice renderer
   const renderScanCanvas = (planeLabel: string, sliceOffset = 0) => {
     const currentSlice = Math.min(120, Math.max(1, store.sliceIndex + sliceOffset));
     const scaleFactor = 0.85 + Math.sin((currentSlice / 120) * Math.PI) * 0.25;
@@ -108,19 +139,18 @@ export const DicomViewerPage: React.FC = () => {
         onWheel={(e) => store.setSliceIndex(store.sliceIndex + (e.deltaY > 0 ? 1 : -1))}
         className="relative bg-black rounded-lg overflow-hidden border border-slate-800 flex items-center justify-center select-none cursor-crosshair h-full min-h-[340px]"
       >
-        {/* Top-left DICOM Metadata Overlay */}
         <div className="absolute top-3 left-3 z-10 text-[11px] font-mono text-cyan-300/90 pointer-events-none space-y-0.5">
-          <p>HASSAN, OMAR (MRN-884920)</p>
-          <p>MODALITY: CT CHEST • {planeLabel}</p>
+          <p>{firstStudy?.subject?.reference || 'ORTHOPEDIC STUDY PREVIEW'}</p>
+          <p>
+            {firstStudy?.identifier?.[0]?.value || 'PHASE 3 ORTHANC WORKSTATION'} • {planeLabel}
+          </p>
           <p>SLICE: {currentSlice} / 120</p>
         </div>
 
-        {/* Bottom-left WW/WL Overlay */}
         <div className="absolute bottom-3 left-3 z-10 text-[11px] font-mono text-amber-300/90 pointer-events-none">
           WW: {store.windowWidth} | WL: {store.windowLevel} | ZOOM: {store.zoom.toFixed(2)}x
         </div>
 
-        {/* Simulated DICOM Slice Graphic */}
         <div
           style={{
             transform: `translate(${store.pan.x}px, ${store.pan.y}px) scale(${store.zoom * scaleFactor}) rotate(${store.rotation}deg)`,
@@ -129,69 +159,32 @@ export const DicomViewerPage: React.FC = () => {
           className="transition-transform duration-75"
         >
           <svg width="280" height="280" viewBox="0 0 280 280">
-            {/* Thorax Outer Wall */}
             <ellipse
               cx="140"
               cy="140"
-              rx="118"
-              ry="96"
+              rx="105"
+              ry="105"
               fill="#1e293b"
               stroke="#94a3b8"
-              strokeWidth="6"
+              strokeWidth="5"
             />
-            {/* Ribs */}
-            <ellipse
-              cx="140"
-              cy="140"
-              rx="108"
-              ry="86"
-              fill="none"
-              stroke="#e2e8f0"
-              strokeWidth="3"
-              strokeDasharray="14 8"
-            />
-            {/* Left & Right Lung Fields */}
-            <ellipse
-              cx="96"
-              cy="138"
-              rx="38"
-              ry="56"
-              fill="#090d16"
-              stroke="#475569"
-              strokeWidth="2"
-            />
-            <ellipse
-              cx="184"
-              cy="138"
-              rx="38"
-              ry="56"
-              fill="#090d16"
-              stroke="#475569"
-              strokeWidth="2"
-            />
-            {/* Spine & Sternum */}
-            <circle cx="140" cy="204" r="14" fill="#f8fafc" />
-            <rect x="133" y="64" width="14" height="10" rx="3" fill="#e2e8f0" />
-            {/* Heart / Mediastinum */}
-            <ellipse cx="146" cy="132" rx="22" ry="28" fill="#64748b" />
-            {/* Target Pulmonary Nodule */}
-            <circle cx="92" cy="112" r="5" fill="#cbd5e1" />
+            <rect x="115" y="45" width="50" height="80" rx="18" fill="#e2e8f0" />
+            <rect x="118" y="148" width="44" height="85" rx="14" fill="#cbd5e1" />
+            <ellipse cx="140" cy="136" rx="34" ry="12" fill="#475569" />
           </svg>
         </div>
 
-        {/* AI CDSS Diagnostic Overlay */}
         {store.showCdssOverlay && planeLabel === 'AXIAL' && (
           <div
-            style={{ left: '31%', top: '34%' }}
-            className="absolute w-12 h-12 border-2 border-rose-500 bg-rose-500/15 rounded pointer-events-none animate-pulse"
+            style={{ left: '42%', top: '44%' }}
+            className="absolute w-16 h-12 border-2 border-rose-500 bg-rose-500/15 rounded pointer-events-none animate-pulse"
           >
             <span className="absolute -top-5 left-0 bg-rose-600 text-white text-[10px] font-mono px-1.5 py-0.5 rounded whitespace-nowrap">
-              AI: Nodule 94.2%
+              CDSS ROI
             </span>
           </div>
         )}
 
-        {/* User Annotations & Measurements */}
         {planeLabel === 'AXIAL' &&
           store.annotations.map((ann) => (
             <div
@@ -211,9 +204,7 @@ export const DicomViewerPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {/* Top Toolbar */}
       <div className="bg-slate-900 text-slate-200 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
-        {/* Manipulation & Bonus Annotation Tools */}
         <div className="flex flex-wrap items-center gap-1.5">
           {(
             [
@@ -230,6 +221,7 @@ export const DicomViewerPage: React.FC = () => {
           ).map((tool) => (
             <button
               key={tool.id}
+              type="button"
               onClick={() => store.setActiveTool(tool.id)}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
                 store.activeTool === tool.id
@@ -243,24 +235,28 @@ export const DicomViewerPage: React.FC = () => {
           ))}
 
           <button
+            type="button"
             onClick={() => store.setZoom(store.zoom + 0.25)}
             className="px-2.5 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700"
           >
             +Zoom
           </button>
           <button
+            type="button"
             onClick={() => store.rotateBy(90)}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700"
           >
             <RotateCw className="w-3.5 h-3.5" /> 90°
           </button>
           <button
+            type="button"
             onClick={store.toggleInvert}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700"
           >
             <Contrast className="w-3.5 h-3.5" /> Invert
           </button>
           <button
+            type="button"
             onClick={store.resetView}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-amber-300"
           >
@@ -268,7 +264,6 @@ export const DicomViewerPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Layout Mode Switcher (2D / MPR / 3D Volume / Bonus Compare) */}
         <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg">
           {(
             [
@@ -280,6 +275,7 @@ export const DicomViewerPage: React.FC = () => {
           ).map((mode) => (
             <button
               key={mode.id}
+              type="button"
               onClick={() => store.setLayout(mode.id)}
               className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition ${
                 store.layout === mode.id
@@ -294,12 +290,9 @@ export const DicomViewerPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Workstation Area: Viewports + Right Controls/CDSS Panel */}
       <div className="grid lg:grid-cols-4 gap-4">
-        {/* Viewport Grid (3 cols) */}
         <div className="lg:col-span-3 space-y-3">
           {store.layout === 'SINGLE_2D' && renderScanCanvas('AXIAL')}
-
           {store.layout === 'MPR' && (
             <div className="grid md:grid-cols-3 gap-3">
               {renderScanCanvas('AXIAL', 0)}
@@ -307,29 +300,25 @@ export const DicomViewerPage: React.FC = () => {
               {renderScanCanvas('CORONAL', -14)}
             </div>
           )}
-
           {store.layout === 'COMPARE' && (
             <div className="grid md:grid-cols-2 gap-3">
-              {renderScanCanvas('AXIAL (Current CT - Nov 2026)', 0)}
-              {renderScanCanvas('AXIAL (Prior MRI - May 2026)', -22)}
+              {renderScanCanvas('AXIAL (Current Study)', 0)}
+              {renderScanCanvas('AXIAL (Prior Baseline)', -22)}
             </div>
           )}
-
           {store.layout === 'VOLUME_3D' && (
             <div className="bg-slate-950 rounded-xl border border-slate-800 p-6 min-h-[380px] flex flex-col items-center justify-center text-center space-y-3">
               <Box
                 className="w-14 h-14 text-cyan-400 animate-spin"
                 style={{ animationDuration: '12s' }}
               />
-              <h3 className="text-white font-semibold">3D Volumetric Thoracic Reconstruction</h3>
+              <h3 className="text-white font-semibold">3D Orthopedic Reconstruction</h3>
               <p className="text-xs text-slate-400 max-w-md">
-                WebGL VTK/Cornerstone3D volume ray-casting active. Rotate using mouse drag or adjust
-                opacity transfer function via WW/WL sliders.
+                Phase 3 Orthanc DICOMweb / OHIF volumetric viewport preview.
               </p>
             </div>
           )}
 
-          {/* Slice Scrubber Bar */}
           <div className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 flex items-center gap-4">
             <span className="text-xs font-semibold text-slate-600 whitespace-nowrap">
               Slice: {store.sliceIndex} / 120
@@ -345,9 +334,7 @@ export const DicomViewerPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Panel: Enhancement Filters + AI CDSS Diagnostic Support */}
         <div className="space-y-4">
-          {/* Image Enhancement & Windowing */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Windowing & Filters
@@ -356,6 +343,7 @@ export const DicomViewerPage: React.FC = () => {
               {WW_WL_PRESETS.map((p) => (
                 <button
                   key={p.name}
+                  type="button"
                   onClick={() => store.setWindowLevel(p.ww, p.wl)}
                   className="text-xs py-1.5 px-2 rounded border border-slate-200 hover:border-blue-500 hover:bg-blue-50 font-medium text-slate-700"
                 >
@@ -365,11 +353,14 @@ export const DicomViewerPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs text-slate-600 mb-1">Enhancement Filter</label>
+              <label htmlFor="dicom-filter" className="block text-xs text-slate-600 mb-1">
+                Enhancement Filter
+              </label>
               <select
+                id="dicom-filter"
                 value={store.filter}
                 onChange={(e) => store.setFilter(e.target.value as ImageFilter)}
-                className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs"
+                className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
               >
                 <option value="NONE">Original (Unfiltered)</option>
                 <option value="SHARPEN">Edge Sharpening</option>
@@ -379,7 +370,6 @@ export const DicomViewerPage: React.FC = () => {
             </div>
           </div>
 
-          {/* AI CDSS Panel */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold uppercase tracking-wider text-indigo-600 flex items-center gap-1.5">
@@ -397,26 +387,31 @@ export const DicomViewerPage: React.FC = () => {
               </label>
             </div>
 
-            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 space-y-1">
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
               <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-rose-900">Pulmonary Nodule (RUL)</span>
-                <span className="text-[11px] font-mono bg-rose-600 text-white px-1.5 py-0.5 rounded">
-                  94.2%
+                <span className="text-xs font-bold text-slate-900">
+                  {firstReport?.status ? `FHIR Report (${firstReport.status})` : 'Phase 3 CDSS'}
                 </span>
+                {firstStudy?.id && (
+                  <span className="text-[11px] font-mono bg-indigo-600 text-white px-1.5 py-0.5 rounded">
+                    Study #{firstStudy.id}
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-rose-800">
-                6.2 mm solid nodule detected on slice #42. Fleischner guidelines suggest 6–12 month
-                follow-up CT.
+              <p className="text-xs text-slate-600">
+                {firstReport?.conclusion ||
+                  'Live Orthanc upload and AI fracture/joint inference connect in Phase 3.'}
               </p>
             </div>
 
             {isClinical && (
               <button
+                type="button"
                 onClick={handleSaveToRecord}
                 className="w-full flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-lg text-xs font-medium transition"
               >
                 <Save className="w-3.5 h-3.5" />
-                {savedNotice ? 'Saved to Patient EMR!' : 'Save Annotations to EMR'}
+                {savedNotice ? 'Workspace State Saved!' : 'Save Viewport Notes'}
               </button>
             )}
           </div>

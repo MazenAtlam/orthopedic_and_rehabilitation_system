@@ -1,36 +1,33 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Activity, ShieldCheck, Stethoscope, User as UserIcon } from 'lucide-react';
+import { Activity, AlertCircle } from 'lucide-react';
+import { queryClient } from '../../api/queryClient';
+import { extractApiError } from '../../api/client';
+import { authApi } from '../../api/endpoints';
 import { useAuthStore } from '../../store/authStore';
-import type { UserRole } from '../../types';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { login, switchDemoRole } = useAuthStore();
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
 
-  const handleStandardLogin = (e: React.FormEvent) => {
+  const handleStandardLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(
-      {
-        user_id: 2,
-        full_name: 'Dr. Karim Nabil',
-        email,
-        role: 'staff',
-        is_active: true,
-        staff_type: 'doctor',
-        specialty: 'Orthopedic Surgery',
-        staff_id: 10,
-      },
-      'sample-jwt-token',
-    );
-    navigate('/dashboard');
-  };
-
-  const handleQuickDemo = (role: UserRole) => {
-    switchDemoRole(role);
-    navigate('/dashboard');
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const response = await authApi.login(email.trim(), password);
+      queryClient.clear();
+      login(response.data.user, response.data.access_token);
+      navigate('/dashboard', { replace: true });
+    } catch (err) {
+      setError(extractApiError(err, 'Invalid email or password.'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -46,21 +43,40 @@ export const LoginPage: React.FC = () => {
           </div>
         </div>
 
+        {error && (
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs text-rose-700"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <form onSubmit={handleStandardLogin} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+            <label htmlFor="login-email" className="block text-sm font-medium text-slate-700 mb-1">
+              Email Address
+            </label>
             <input
+              id="login-email"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="doctor@orthorehab.clinic"
+              placeholder="doctor1@hcis.test"
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <label
+              htmlFor="login-password"
+              className="block text-sm font-medium text-slate-700 mb-1"
+            >
+              Password
+            </label>
             <input
+              id="login-password"
               type="password"
               required
               value={password}
@@ -71,43 +87,12 @@ export const LoginPage: React.FC = () => {
           </div>
           <button
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition"
+            disabled={isSubmitting}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-medium py-2.5 rounded-lg text-sm transition"
           >
-            Sign In
+            {isSubmitting ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
-
-        <div className="mt-6 pt-6 border-t border-slate-100">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 text-center">
-            Quick Role Preview (Dev Mode)
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('admin')}
-              className="flex flex-col items-center gap-1 p-2.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50 text-xs font-medium text-slate-700 transition"
-            >
-              <ShieldCheck className="w-4 h-4 text-indigo-600" />
-              Admin
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('staff')}
-              className="flex flex-col items-center gap-1 p-2.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50 text-xs font-medium text-slate-700 transition"
-            >
-              <Stethoscope className="w-4 h-4 text-teal-600" />
-              Staff
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('patient')}
-              className="flex flex-col items-center gap-1 p-2.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50 text-xs font-medium text-slate-700 transition"
-            >
-              <UserIcon className="w-4 h-4 text-blue-600" />
-              Patient
-            </button>
-          </div>
-        </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
           New patient?{' '}
