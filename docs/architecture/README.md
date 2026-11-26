@@ -16,4 +16,3 @@ The independent EMR requests Patient and the associated FHIR resources using the
 
 - [API contract](../api/README.md)
 - [Database and demo seed](../database/README.md)
-- [Phase 2 feature review](../reports/amr/PHASE_2_PROGRESS.md)

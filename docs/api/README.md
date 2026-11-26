@@ -26,4 +26,3 @@ Patient resources are filtered to the authenticated account's own records. Admin
 
 - [Flask routes](../../backend/app/api/v1)
 - [FHIR resource mapping and writers](../../backend/app/fhir)
-- [Frontend integration findings](../reports/amr/PHASE_2_PROGRESS.md)
