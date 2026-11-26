@@ -29,7 +29,7 @@ def _valid_identity(identity: object) -> int | None:
 
 def load_actor() -> None:
     """Verify the bearer token and load the active account into ``flask.g``."""
-    verify_jwt_in_request()
+    verify_jwt_in_request(optional=True)
     user_id = _valid_identity(get_jwt_identity())
     if user_id is None:
         raise ApiError(401, "login", "Invalid account.")
