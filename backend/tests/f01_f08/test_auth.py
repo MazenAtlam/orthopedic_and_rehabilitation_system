@@ -149,6 +149,28 @@ def test_logout_clears_refresh_cookie(client: FlaskClient, seed: SeedData) -> No
     assert_error(client.post("/api/v1/auth/refresh"), 401, "login")
 
 
+def test_logout_with_access_header_and_refresh_cookie_revokes_both(
+    client: FlaskClient, seed: SeedData
+) -> None:
+    logged_in = login(client, seed.patient1_email)
+    assert logged_in.status_code == 200
+    access_token = logged_in.get_json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    refreshed = client.post("/api/v1/auth/refresh", headers=headers)
+    assert refreshed.status_code == 200, refreshed.get_json()
+
+    response = client.post("/api/v1/auth/logout", headers=headers)
+    assert response.status_code == 200, response.get_json()
+    assert_error(
+        client.get(f"/api/v1/patients/{seed.patient1_id}", headers=headers),
+        401,
+        "revoked",
+    )
+    assert_error(client.post("/api/v1/auth/refresh"), 401, "login")
+    assert_error(client.post("/api/v1/auth/logout"), 401, "login")
+
+
 def test_login_missing_password_returns_400(client: FlaskClient) -> None:
     response = client.post("/api/v1/auth/login", json={"email": "nobody@hcis.test"})
     assert_error(response, 400, "bad_request")
