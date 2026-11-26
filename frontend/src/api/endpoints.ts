@@ -2,46 +2,104 @@ import { apiClient } from './client';
 import type {
   Appointment,
   CdssResult,
+  FhirBundle,
+  FinancialReport,
   Icd10Code,
   Invoice,
   MedicalRecord,
   Patient,
+  PatientReport,
+  PaymentRecord,
   Prescription,
   RehabSession,
   Scan,
   ScanAnnotation,
   ServiceItem,
   Staff,
+  SystemReport,
   TreatmentPlan,
   User,
 } from '../types';
 
+export interface RegisterPayload {
+  full_name: string;
+  email: string;
+  password: string;
+  birth_date: string;
+  gender: 'male' | 'female';
+  phone?: string | null;
+  address?: string | null;
+}
+
 export const authApi = {
-  register: (payload: Record<string, unknown>) => apiClient.post('/auth/register', payload),
+  register: (payload: RegisterPayload) =>
+    apiClient.post<{
+      user_id: number;
+      patient_id: number;
+      email: string;
+      role: string;
+      user: User;
+    }>('/auth/register', payload),
   login: (email: string, password: string) =>
-    apiClient.post<{ access_token: string; user: User }>('/auth/login', { email, password }),
-  logout: () => apiClient.post('/auth/logout'),
+    apiClient.post<{ access_token: string; token_type: string; expires_in: number; user: User }>(
+      '/auth/login',
+      { email, password },
+    ),
+  logout: () => apiClient.post<{ message: string }>('/auth/logout'),
 };
 
 export const usersApi = {
-  listUsers: () => apiClient.get<User[]>('/users'),
-  createUser: (data: Partial<User> & { password: string }) => apiClient.post<User>('/users', data),
-  updateUser: (id: number, data: Partial<User>) => apiClient.patch<User>(`/users/${id}`, data),
-  listPatients: (q?: string) => apiClient.get<Patient[]>('/patients', { params: { q } }),
+  listUsers: (params?: { role?: string; is_active?: boolean; q?: string }) =>
+    apiClient.get<User[]>('/users', { params }),
+  createUser: (data: {
+    email: string;
+    password: string;
+    role: 'admin' | 'staff';
+    full_name?: string;
+    staff_type?: string;
+    specialty?: string;
+  }) => apiClient.post<User>('/users', data),
+  updateUser: (
+    id: number,
+    data: {
+      role?: 'admin' | 'staff' | 'patient';
+      is_active?: boolean;
+      full_name?: string;
+      staff_type?: string;
+      specialty?: string;
+    },
+  ) => apiClient.patch<User>(`/users/${id}`, data),
+  listPatients: (q?: string) =>
+    apiClient.get<Patient[]>('/patients', { params: q ? { q } : undefined }),
   getPatient: (id: number) => apiClient.get<Patient>(`/patients/${id}`),
   updatePatient: (id: number, data: Partial<Patient>) =>
     apiClient.put<Patient>(`/patients/${id}`, data),
-  listStaff: () => apiClient.get<Staff[]>('/staff'),
+  listStaff: (params?: { staff_type?: string; q?: string }) =>
+    apiClient.get<Staff[]>('/staff', { params }),
 };
 
 export const appointmentsApi = {
   list: (params?: { patient?: number; staff?: number; date?: string; status?: string }) =>
     apiClient.get<Appointment[]>('/appointments', { params }),
-  book: (data: Omit<Appointment, 'appointment_id' | 'status'>) =>
-    apiClient.post<Appointment>('/appointments', data),
-  update: (id: number, data: Partial<Appointment>) =>
-    apiClient.patch<Appointment>(`/appointments/${id}`, data),
-  cancel: (id: number) => apiClient.delete(`/appointments/${id}`),
+  book: (data: {
+    patient_id: number;
+    staff_id: number;
+    type: Appointment['type'];
+    start_time: string;
+    end_time: string;
+    notes?: string;
+  }) => apiClient.post<Appointment>('/appointments', data),
+  update: (
+    id: number,
+    data: {
+      start_time?: string;
+      end_time?: string;
+      status?: Appointment['status'];
+      type?: Appointment['type'];
+      notes?: string;
+    },
+  ) => apiClient.patch<Appointment>(`/appointments/${id}`, data),
+  cancel: (id: number) => apiClient.delete<Appointment>(`/appointments/${id}`),
   getAvailability: (staffId: number, date: string) =>
     apiClient.get<string[]>(`/staff/${staffId}/availability`, { params: { date } }),
 };
@@ -49,50 +107,110 @@ export const appointmentsApi = {
 export const clinicalApi = {
   getPatientRecords: (patientId: number) =>
     apiClient.get<MedicalRecord[]>(`/patients/${patientId}/records`),
-  createRecord: (data: Omit<MedicalRecord, 'record_id'>) =>
-    apiClient.post<MedicalRecord>('/records', data),
+  createRecord: (data: {
+    patient_id: number;
+    appointment_id?: number | null;
+    visit_date?: string;
+    chief_complaint?: string | null;
+    affected_area?: string | null;
+    diagnosis?: string | null;
+    icd10_code?: string | null;
+    notes?: string | null;
+  }) => apiClient.post<MedicalRecord>('/records', data),
   updateRecord: (id: number, data: Partial<MedicalRecord>) =>
     apiClient.put<MedicalRecord>(`/records/${id}`, data),
-  addPrescription: (recordId: number, data: Omit<Prescription, 'prescription_id' | 'record_id'>) =>
-    apiClient.post<Prescription>(`/records/${recordId}/prescriptions`, data),
+  addPrescription: (
+    recordId: number,
+    data: {
+      medication: string;
+      dose?: string | null;
+      frequency?: string | null;
+      duration?: string | null;
+      instructions?: string | null;
+    },
+  ) => apiClient.post<Prescription>(`/records/${recordId}/prescriptions`, data),
   getPatientPrescriptions: (patientId: number) =>
     apiClient.get<Prescription[]>(`/patients/${patientId}/prescriptions`),
 };
 
 export const rehabApi = {
-  listPlans: (patientId?: number) =>
-    apiClient.get<TreatmentPlan[]>('/treatment-plans', { params: { patient_id: patientId } }),
-  createPlan: (data: Omit<TreatmentPlan, 'plan_id'>) =>
-    apiClient.post<TreatmentPlan>('/treatment-plans', data),
-  updatePlan: (id: number, data: Partial<TreatmentPlan>) =>
-    apiClient.patch<TreatmentPlan>(`/treatment-plans/${id}`, data),
-  logSession: (planId: number, data: Omit<RehabSession, 'session_id' | 'plan_id'>) =>
-    apiClient.post<RehabSession>(`/treatment-plans/${planId}/sessions`, data),
+  listPlans: (params?: { patient_id?: number; status?: string }) =>
+    apiClient.get<TreatmentPlan[]>('/treatment-plans', { params }),
+  createPlan: (data: {
+    patient_id: number;
+    record_id?: number | null;
+    title: string;
+    goal?: string | null;
+    start_date: string;
+    end_date?: string | null;
+  }) => apiClient.post<TreatmentPlan>('/treatment-plans', data),
+  updatePlan: (
+    id: number,
+    data: {
+      title?: string;
+      goal?: string | null;
+      end_date?: string | null;
+      status?: TreatmentPlan['status'];
+    },
+  ) => apiClient.patch<TreatmentPlan>(`/treatment-plans/${id}`, data),
+  logSession: (
+    planId: number,
+    data: {
+      appointment_id?: number | null;
+      session_date?: string;
+      exercises?: string | null;
+      pain_score?: number | null;
+      range_of_motion?: number | null;
+      notes?: string | null;
+    },
+  ) => apiClient.post<RehabSession>(`/treatment-plans/${planId}/sessions`, data),
   listSessions: (planId: number) =>
     apiClient.get<RehabSession[]>(`/treatment-plans/${planId}/sessions`),
 };
 
 export const billingApi = {
-  listServices: () => apiClient.get<ServiceItem[]>('/services'),
-  saveService: (data: Partial<ServiceItem>) => apiClient.post<ServiceItem>('/services', data),
+  listServices: (includeInactive = false) =>
+    apiClient.get<ServiceItem[]>('/services', {
+      params: includeInactive ? { include_inactive: 'true' } : undefined,
+    }),
+  saveService: (data: {
+    service_id?: number;
+    name: string;
+    description?: string | null;
+    price: string | number;
+    is_active?: boolean;
+  }) => apiClient.post<ServiceItem>('/services', data),
   createInvoice: (data: {
     patient_id: number;
     appointment_id?: number;
     icd10_code?: string;
+    issue_date?: string;
     due_date: string;
     items: { service_id: number; quantity: number }[];
   }) => apiClient.post<Invoice>('/invoices', data),
-  listInvoices: () => apiClient.get<Invoice[]>('/invoices'),
+  listInvoices: (params?: { patient_id?: number; status?: string }) =>
+    apiClient.get<Invoice[]>('/invoices', { params }),
   getInvoice: (id: number) => apiClient.get<Invoice>(`/invoices/${id}`),
-  payInvoice: (id: number, data: { amount: number; method: 'cash' | 'card' | 'online' }) =>
-    apiClient.post(`/invoices/${id}/payments`, data),
-  searchIcd10: (q: string) => apiClient.get<Icd10Code[]>('/icd10', { params: { q } }),
+  payInvoice: (
+    id: number,
+    data: { amount: string | number; method: 'cash' | 'card' | 'online'; simulate?: string },
+    idempotencyKey?: string,
+  ) =>
+    apiClient.post<{ payment: PaymentRecord; invoice: Invoice }>(
+      `/invoices/${id}/payments`,
+      data,
+      idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined,
+    ),
+  searchIcd10: (q = '') => apiClient.get<Icd10Code[]>('/icd10', { params: q ? { q } : undefined }),
 };
 
 export const reportsApi = {
-  getSystem: () => apiClient.get('/reports/system'),
-  getPatients: () => apiClient.get('/reports/patients'),
-  getFinancial: () => apiClient.get('/reports/financial'),
+  getSystem: (params?: { start?: string; end?: string }) =>
+    apiClient.get<SystemReport>('/reports/system', { params }),
+  getPatients: (params?: { start?: string; end?: string }) =>
+    apiClient.get<PatientReport>('/reports/patients', { params }),
+  getFinancial: (params?: { start?: string; end?: string }) =>
+    apiClient.get<FinancialReport>('/reports/financial', { params }),
 };
 
 export const imagingApi = {
@@ -117,11 +235,15 @@ export const imagingApi = {
 };
 
 export const fhirApi = {
-  getMetadata: () => apiClient.get('/fhir/metadata'),
-  searchResource: (resourceType: string, params?: Record<string, string>) =>
-    apiClient.get(`/fhir/${resourceType}`, { params }),
-  readResource: (resourceType: string, id: string | number) =>
-    apiClient.get(`/fhir/${resourceType}/${id}`),
-  createResource: (resourceType: string, body: Record<string, unknown>) =>
-    apiClient.post(`/fhir/${resourceType}`, body),
+  getMetadata: () => apiClient.get<Record<string, unknown>>('/fhir/metadata'),
+  searchResource: <T = Record<string, unknown>>(
+    resourceType: string,
+    params?: Record<string, string>,
+  ) => apiClient.get<FhirBundle<T>>(`/fhir/${resourceType}`, { params }),
+  readResource: <T = Record<string, unknown>>(resourceType: string, id: string | number) =>
+    apiClient.get<T>(`/fhir/${resourceType}/${id}`),
+  createResource: <T = Record<string, unknown>>(
+    resourceType: string,
+    body: Record<string, unknown>,
+  ) => apiClient.post<T>(`/fhir/${resourceType}`, body),
 };
