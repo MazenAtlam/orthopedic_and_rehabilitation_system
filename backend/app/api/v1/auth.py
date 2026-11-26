@@ -25,7 +25,7 @@ from app.auth import (
 )
 from app.api.v1.serializers import serialize_user
 from app.errors import ApiError, FieldError
-from app.extensions import bcrypt, db, login_tracker
+from app.extensions import bcrypt, db, login_tracker, revoke_current_token
 from app.models import Gender, Patient, User, UserRole
 from app.schemas import (
     ValidationError,
@@ -255,7 +255,7 @@ def login() -> tuple[Response, int]:
 def refresh() -> tuple[Response, int]:
     """Issue a new access token from the refresh cookie."""
     _verify_refresh_origin()
-    verify_jwt_in_request(refresh=True)
+    verify_jwt_in_request(refresh=True, locations=["cookies"])
     user = _active_user_from_identity(get_jwt_identity())
     access_token = issue_access_token(str(user.user_id), claims_for(user))
     write_audit("token_refreshed", "auth", user_id=user.user_id)
@@ -274,12 +274,25 @@ def refresh() -> tuple[Response, int]:
 
 @auth_bp.post("/logout")
 def logout() -> tuple[Response, int]:
-    """Revoke the current refresh token and clear its cookie."""
+    """Revoke the current access/refresh tokens and clear the refresh cookie."""
     _verify_refresh_origin()
-    verify_jwt_in_request(refresh=True)
-    user = _user_from_identity(get_jwt_identity(), active_only=False)
+    identity: object = None
+    header_jwt = verify_jwt_in_request(optional=True, locations=["headers"])
+    if header_jwt is not None:
+        identity = get_jwt_identity()
+        revoke_current_token()
 
-    revoke_current_refresh_token()
+    cookie_jwt = verify_jwt_in_request(
+        optional=True, refresh=True, locations=["cookies"]
+    )
+    if cookie_jwt is not None:
+        identity = get_jwt_identity()
+        revoke_current_refresh_token()
+
+    if identity is None:
+        raise ApiError(401, "login", "Authentication is required.")
+
+    user = _user_from_identity(identity, active_only=False)
     write_audit("logout", "auth", user_id=user.user_id)
     response = jsonify({"message": "Logged out."})
     unset_refresh_cookies(response)
