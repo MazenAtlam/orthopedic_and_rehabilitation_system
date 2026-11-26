@@ -37,7 +37,7 @@ def default_archive_path() -> Path:
     configured = os.environ.get("ICD10_ARCHIVE_PATH", "").strip()
     if configured:
         return Path(configured)
-    docker_mount = Path("/app/database_seed") / ARCHIVE_NAME
+    docker_mount = Path("/database_seed") / ARCHIVE_NAME
     if docker_mount.parent.exists():
         return docker_mount
     return Path(__file__).resolve().parents[2] / "database" / "seed" / ARCHIVE_NAME

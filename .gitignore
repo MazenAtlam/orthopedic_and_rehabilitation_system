@@ -18,6 +18,7 @@ htmlcov/
 node_modules/
 /emr-client/.vite/
 /frontend/.vite/
+coverage/
 dist/
 build/
 npm-debug.log*
