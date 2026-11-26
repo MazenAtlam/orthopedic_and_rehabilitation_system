@@ -1,0 +1,8 @@
+Flask>=3.0,<4.0
+gunicorn>=22.0
+pydicom>=2.4
+SimpleITK>=2.3
+numpy>=1.26
+requests>=2.31
+# Phase 3: add PyTorch (use the CPU wheel to keep the image small), for example:
+#   torch  (install with --index-url https://download.pytorch.org/whl/cpu)
