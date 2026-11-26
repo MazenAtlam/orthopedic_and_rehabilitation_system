@@ -474,10 +474,10 @@ This project is licensed under the **MIT License** — see the [`LICENSE`](LICEN
 | # | Member | ID | Role |
 | :-: | --- | :-: | --- |
 | 1 | **Ahmed Osama Ashmawy Mohamed** | 1 | Medical Imaging and DICOM Developer |
-| 2 | **Hussein Mohamed Hussein Saleh** | 20 | Backend Developer |
-| 3 | **Amr Fekry El-Sayed Mohamed** | 32 | Database and HL7/FHIR Integration Engineer |
+| 2 | **Hussein Mohamed Hussein Saleh** | 21 | Backend Developer |
+| 3 | **Amr Fekry El-Sayed Mohamed** | 33 | Database and HL7/FHIR Integration Engineer |
 | 4 | **Anas Mohamed Abdelaziz El-Sheikh** | 16 | Frontend Developer |
-| 5 | **Mazen Atef Awad Atlam** | 37 | Team Leader, AI and CDSS Engineer |
+| 5 | **Mazen Atef Awad Atlam** | 38 | Team Leader, AI and CDSS Engineer |
 
 ### Course & open-source acknowledgments
 
